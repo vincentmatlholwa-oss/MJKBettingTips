@@ -77,10 +77,10 @@ const SPORT_CONFIG = {
 function getCfg(key) { return SPORT_CONFIG[key] || { hasDraw: true, homeAdv: 1.10, kFactor: 32, formWindow: 5, minConf: 68, maxConf: 96, usePoisson: false, dcRho: 0 }; }
 
 const TIERS = {
-  free:  { name: 'Free', tipLimit: 50, earlyAccess: false, bankersOnly: false, sportFiltering: false, accaBuilder: false, roiDashboard: false, apiAccess: false, telegramAlerts: false, monthlyReport: false, price: 0 },
-  starter: { name: 'Starter', tipLimit: Infinity, earlyAccess: false, bankersOnly: false, sportFiltering: false, accaBuilder: false, roiDashboard: false, apiAccess: false, telegramAlerts: true, monthlyReport: false, price: 700 },
-  pro: { name: 'Pro', tipLimit: Infinity, earlyAccess: false, bankersOnly: false, sportFiltering: false, accaBuilder: true, roiDashboard: true, apiAccess: false, telegramAlerts: true, monthlyReport: false, price: 2500 },
-  elite: { name: 'Elite', tipLimit: Infinity, earlyAccess: true, bankersOnly: true, sportFiltering: true, accaBuilder: true, roiDashboard: true, apiAccess: true, telegramAlerts: true, monthlyReport: true, price: 6570 }
+  free:  { name: 'Free', tipLimit: 3, earlyAccess: false, bankersOnly: false, sportFiltering: false, accaBuilder: false, roiDashboard: false, telegramAlerts: false, monthlyReport: false, price: 0 },
+  starter: { name: 'Starter', tipLimit: 10, earlyAccess: false, bankersOnly: false, sportFiltering: false, accaBuilder: false, roiDashboard: false, telegramAlerts: true, monthlyReport: false, price: 700 },
+  pro: { name: 'Pro', tipLimit: 25, earlyAccess: false, bankersOnly: false, sportFiltering: false, accaBuilder: true, roiDashboard: true, telegramAlerts: true, monthlyReport: false, price: 2500 },
+  elite: { name: 'Elite', tipLimit: 30, earlyAccess: true, bankersOnly: true, sportFiltering: true, accaBuilder: true, roiDashboard: true, telegramAlerts: true, monthlyReport: true, price: 6570 }
 };
 
 let teamRatings = {};
@@ -1220,7 +1220,11 @@ app.get('/api/tips', function(req, res) {
     try { var decoded = jwt.verify(header.split(' ')[1], JWT_SECRET); userTier = decoded.tier; } catch (e) {}
   }
   var tier = TIERS[userTier] || TIERS.free;
-  if (tier.tipLimit !== Infinity && tips.length > tier.tipLimit) tips = tips.slice(0, tier.tipLimit);
+  var isAdmin = false;
+  if (header && header.startsWith('Bearer ')) {
+    try { var decoded = jwt.verify(header.split(' ')[1], JWT_SECRET); isAdmin = decoded.role === 'admin'; } catch (e) {}
+  }
+  if (!isAdmin && tips.length > tier.tipLimit) tips = tips.slice(0, tier.tipLimit);
   var highConf = tips.filter(function(t) { return t.conf >= 80; });
   var seen = new Set(); var bankers = [];
   for (var i = 0; i < highConf.length && bankers.length < 3; i++) { if (!seen.has(highConf[i].type)) { seen.add(highConf[i].type); bankers.push(highConf[i]); } }
