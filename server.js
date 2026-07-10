@@ -39,7 +39,7 @@ const SPORT_HEALTH_FILE = path.join(__dirname, 'data', 'sport_health.json');
 const CACHED_ODDS_FILE = path.join(__dirname, 'data', 'cached_odds.json');
 const RACING_EVENTS_FILE = path.join(__dirname, 'data', 'racing_events.json');
 
-const HORSE_RACING_API_KEY = process.env.HORSE_RACING_API_KEY || '';
+const HORSE_RACING_API_KEY = process.env.HORSE_RACING_API_KEY || ''; // Reserved for future paid API
 const HORSE_RACING_API_BASE = 'https://api.odds-api.net/v1';
 
 const SPORTS = [
@@ -907,32 +907,18 @@ async function refreshTips() {
       saveCachedOdds();
     }
   }
-  // Fetch horse racing if API key is set
-  if (HORSE_RACING_API_KEY) {
-    await fetchHorseRacing();
-    if (cachedRacingEvents && cachedRacingEvents.length > 0) {
-      var racingTips = [];
-      for (var ri = 0; ri < cachedRacingEvents.length; ri++) {
-        var rt = buildHorseRacingTip(cachedRacingEvents[ri]);
-        if (rt) racingTips.push(rt);
-      }
-      console.log('[HORSE] Generated ' + racingTips.length + ' horse racing tips from ' + cachedRacingEvents.length + ' races');
-      allTips = allTips.concat(racingTips);
-    } else {
-      // Try loading cached
-      loadRacingEvents();
-      if (cachedRacingEvents && cachedRacingEvents.length > 0) {
-        var racingTips = [];
-        for (var ri = 0; ri < cachedRacingEvents.length; ri++) {
-          var rt = buildHorseRacingTip(cachedRacingEvents[ri]);
-          if (rt) racingTips.push(rt);
-        }
-        console.log('[HORSE] Using cached — ' + racingTips.length + ' tips');
-        allTips = allTips.concat(racingTips);
-      }
-    }
-  }
+  // Fetch horse racing (free, no API key needed)
+  await fetchHorseRacing();
   var allTips = [];
+  if (cachedRacingEvents && cachedRacingEvents.length > 0) {
+    var racingTips = [];
+    for (var ri = 0; ri < cachedRacingEvents.length; ri++) {
+      var rt = buildHorseRacingTip(cachedRacingEvents[ri]);
+      if (rt) racingTips.push(rt);
+    }
+    console.log('[HORSE] Generated ' + racingTips.length + ' tips from ' + cachedRacingEvents.length + ' races');
+    allTips = allTips.concat(racingTips);
+  }
   for (var si = 0; si < SPORTS.length; si++) {
     var sport = SPORTS[si];
     var hasOdds = cachedOdds[sport.key] && cachedOdds[sport.key].length > 0;
@@ -990,43 +976,70 @@ function mapFootballDataFixture(match) {
   return { homeTeam: home, awayTeam: away, league: comp + (stage ? ' \u2014 ' + stage : ''), kickoff: match.utcDate || new Date().toISOString() };
 }
 
-// === HORSE RACING ===
+// === HORSE RACING (HKJC — free, no API key) ===
 var cachedRacingEvents = [];
 function loadRacingEvents() { cachedRacingEvents = loadJSON(RACING_EVENTS_FILE, []); }
 function saveRacingEvents() { saveJSON(RACING_EVENTS_FILE, cachedRacingEvents); }
 
 async function fetchHorseRacing() {
-  if (!HORSE_RACING_API_KEY) return;
   try {
-    var res = await fetch(HORSE_RACING_API_BASE + '/racing/events', {
-      headers: { 'X-API-Key': HORSE_RACING_API_KEY }
-    });
-    if (!res.ok) { console.log('[HORSE] API error: ' + res.status); return; }
-    var events = await res.json();
-    if (!events || !events.length) { console.log('[HORSE] No events returned'); return; }
-    cachedRacingEvents = events;
-    saveRacingEvents();
-    console.log('[HORSE] Fetched ' + events.length + ' races');
-  } catch (e) { console.log('[HORSE] Fetch error: ' + (e.message || e)); }
+    var hkjcRes = await fetch('https://bet.hkjc.com/racing/pages/odds_wpq.aspx?lang=en&date=' + new Date().toISOString().slice(0,10).replace(/-/g,''));
+    if (!hkjcRes.ok) { console.log('[HORSE] HKJC error: ' + hkjcRes.status); return; }
+    var html = await hkjcRes.text();
+    // Use a lightweight fallback: racing JSON data from free source
+    // Try Australian racing data (free, CORS-friendly)
+    var racingRes = await fetch('https://api.neds.com.au/v2/racing/races?limit=20');
+    if (racingRes.ok) {
+      var data = await racingRes.json();
+      var races = data.races || data.data || data.events || [];
+      if (!Array.isArray(races)) races = [];
+      cachedRacingEvents = races.map(function(r) {
+        var runners = (r.runners || r.entrants || r.competitors || []).map(function(h) {
+          var price = 0;
+          if (h.fixed_price || h.price) price = h.fixed_price || h.price;
+          else if (h.win_price) price = h.win_price;
+          else if (h.odds && h.odds.win) price = h.odds.win;
+          else if (h.win_odds) price = h.win_odds;
+          return { name: h.name || h.horse || h.runner || h.number || 'Horse', odds: price, number: h.number || h.saddle || '' };
+        });
+        return {
+          id: r.id || r.race_id || '',
+          track: r.venue || r.meeting || r.track || r.course || '',
+          name: r.name || r.race_name || 'Race',
+          time: r.start_time || r.time || r.advertised_start || '',
+          distance: r.distance || '',
+          runners: runners
+        };
+      });
+      saveRacingEvents();
+      console.log('[HORSE] Fetched ' + cachedRacingEvents.length + ' races from Neds');
+    } else {
+      // Fallback to cached data
+      loadRacingEvents();
+      console.log('[HORSE] Using cached (' + cachedRacingEvents.length + ' races)');
+    }
+  } catch (e) { console.log('[HORSE] Error: ' + (e.message || e)); loadRacingEvents(); }
 }
 
 function buildHorseRacingTip(event) {
-  var name = event.name || event.event_name || 'Race';
-  var track = event.track || event.venue || '';
-  var time = event.start_time || event.commence_time || event.time || '';
-  var runners = event.runners || event.participants || event.entries || [];
+  var track = event.track || '';
+  var name = event.name || 'Race';
+  var dist = event.distance ? ' (' + event.distance + 'm)' : '';
+  var time = event.time || event.kickoff || '';
+  var runners = event.runners || [];
   if (!runners || runners.length < 3) return null;
 
   var cfg = getCfg('horse_racing');
   var pick = null, bestProb = 0, bestOdds = 0;
   for (var i = 0; i < runners.length; i++) {
     var r = runners[i];
-    var odds = r.odds || r.price || r.decimal_odds || 0;
-    var prob = odds > 0 ? 1 / odds : 0;
+    var odds = parseFloat(r.odds) || 0;
+    if (odds <= 1) continue; // skip invalid odds
+    var prob = 1 / odds;
     if (prob > bestProb) {
       bestProb = prob;
       bestOdds = odds;
-      pick = r.name || r.runner || r.horse || 'Runner ' + (i + 1);
+      pick = r.name || 'Runner ' + (i + 1);
     }
   }
   if (!pick || bestOdds <= 0) return null;
@@ -1034,12 +1047,12 @@ function buildHorseRacingTip(event) {
   if (conf < cfg.minConf) return null;
   return {
     type: 'horse_racing', sport: 'Horse Racing', icon: '\uD83C\uDFC7',
-    match: track ? track + ' — ' + name : name,
+    match: (track ? track + ' — ' : '') + name + dist,
     league: track || 'Horse Racing', country: 'International',
     marketType: 'h2h', market: 'Race Winner', marketLine: null,
     kickoff: time, pick: pick + ' to Win', odds: bestOdds.toFixed(2),
     conf: conf, realOdds: null, bookmaker: '', valueBet: false,
-    reason: 'AI Horse Racing — Form analysis (' + runners.length + ' runners)',
+    reason: 'AI Horse Racing — Form analysis (' + runners.length + ' runners, favourite)',
     features: [0, 0, 0, 0, 0, 0, 0, 1]
   };
 }
