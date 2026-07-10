@@ -1,0 +1,1392 @@
+{
+  "soccer_fifa_world_cup": {
+    "Ivory Coast": {
+      "elo": 1550,
+      "games": 0
+    },
+    "Norway": {
+      "elo": 1540,
+      "games": 0
+    },
+    "France": {
+      "elo": 1690,
+      "games": 0
+    },
+    "Sweden": {
+      "elo": 1533,
+      "games": 0
+    },
+    "Mexico": {
+      "elo": 1570,
+      "games": 0
+    },
+    "Ecuador": {
+      "elo": 1533,
+      "games": 0
+    },
+    "England": {
+      "elo": 1633,
+      "games": 0
+    },
+    "DR Congo": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Belgium": {
+      "elo": 1617,
+      "games": 0
+    },
+    "Senegal": {
+      "elo": 1577,
+      "games": 0
+    },
+    "USA": {
+      "elo": 1550,
+      "games": 0
+    },
+    "Bosnia & Herzegovina": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Spain": {
+      "elo": 1650,
+      "games": 0
+    },
+    "Austria": {
+      "elo": 1507,
+      "games": 0
+    },
+    "Portugal": {
+      "elo": 1627,
+      "games": 0
+    },
+    "Croatia": {
+      "elo": 1600,
+      "games": 0
+    },
+    "Switzerland": {
+      "elo": 1567,
+      "games": 0
+    },
+    "Algeria": {
+      "elo": 1523,
+      "games": 0
+    },
+    "Australia": {
+      "elo": 1583,
+      "games": 0
+    },
+    "Egypt": {
+      "elo": 1523,
+      "games": 0
+    },
+    "Argentina": {
+      "elo": 1650,
+      "games": 0
+    },
+    "Cape Verde": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Colombia": {
+      "elo": 1577,
+      "games": 0
+    },
+    "Ghana": {
+      "elo": 1523,
+      "games": 0
+    },
+    "Canada": {
+      "elo": 1513,
+      "games": 0
+    },
+    "Morocco": {
+      "elo": 1550,
+      "games": 0
+    }
+  },
+  "soccer_epl": {
+    "Arsenal": {
+      "elo": 1633,
+      "games": 0
+    },
+    "Coventry City": {
+      "elo": 1493,
+      "games": 0
+    },
+    "Hull City": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Manchester United": {
+      "elo": 1577,
+      "games": 0
+    },
+    "Everton": {
+      "elo": 1517,
+      "games": 0
+    },
+    "Crystal Palace": {
+      "elo": 1530,
+      "games": 0
+    },
+    "Ipswich Town": {
+      "elo": 1487,
+      "games": 0
+    },
+    "Sunderland": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Nottingham Forest": {
+      "elo": 1530,
+      "games": 0
+    },
+    "Leeds United": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Brentford": {
+      "elo": 1540,
+      "games": 0
+    },
+    "Tottenham Hotspur": {
+      "elo": 1607,
+      "games": 0
+    },
+    "Brighton and Hove Albion": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Aston Villa": {
+      "elo": 1583,
+      "games": 0
+    },
+    "Manchester City": {
+      "elo": 1707,
+      "games": 0
+    },
+    "Bournemouth": {
+      "elo": 1533,
+      "games": 0
+    },
+    "Newcastle United": {
+      "elo": 1613,
+      "games": 0
+    },
+    "Liverpool": {
+      "elo": 1673,
+      "games": 0
+    },
+    "Fulham": {
+      "elo": 1540,
+      "games": 0
+    },
+    "Chelsea": {
+      "elo": 1600,
+      "games": 0
+    },
+    "Ivory Coast": {
+      "elo": 1550,
+      "games": 0
+    },
+    "Norway": {
+      "elo": 1540,
+      "games": 0
+    },
+    "France": {
+      "elo": 1690,
+      "games": 0
+    },
+    "Sweden": {
+      "elo": 1533,
+      "games": 0
+    }
+  },
+  "tennis_atp_wimbledon": {
+    "Brandon Nakashima": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Jack Pinnington Jones": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Jesper De Jong": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Rinky Hijikata": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Adrian Mannarino": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Titouan Droguet": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Kamil Majchrzak": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Alejandro Tabilo": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Yannick Hanfmann": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Giovanni Mpetshi Perricard": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Valentin Royer": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Harry Wendelken": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Sho Shimabukuro": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Jaime Faria": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Alex Michelsen": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Jacob Fearnley": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Alex de Minaur": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Roman Andres Burruchaga": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Thanasi Kokkinakis": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Alexander Bublik": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Damir Dzumhur": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Arthur Fery": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Otto Virtanen": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Ben Shelton": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Kyrian Jacquet": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Vilius Gaubas": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Matteo Arnaldi": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Quentin Halys": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Benjamin Bonzi": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Gabriel Diallo": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Jaume Munar": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Francisco Cerundolo": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Karen Khachanov": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Billy Harris": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Taylor Fritz": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Dusan Lajovic": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Pablo Llamas Ruiz": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Zachary Svajda": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Corentin Moutet": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Marcos Giron": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Jakub Mensik": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Toby Samuel": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Lorenzo Sonego": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Tomas Martin Etcheverry": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Patrick Kypson": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Mackenzie McDonald": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Ugo Humbert": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Zizou Bergs": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Dane Sweeny": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Grigor Dimitrov": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Raphael Collignon": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Arthur Fils": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Mariano Navone": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Flavio Cobolli": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Frances Tiafoe": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Terence Atmane": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Tallon Griekspoor": {
+      "elo": 1500,
+      "games": 0
+    },
+    "James Duckworth": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Vit Kopriva": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Jan Choinski": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Alexander Blockx": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Alexander Zverev": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Jiri Lehecka": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Alexei Popyrin": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Alex Molcan": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Daniel Altmaier": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Stan Wawrinka": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Matteo Berrettini": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Alejandro Davidovich Fokina": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Fabian Marozsan": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Daniel Merida Aguilar": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Daniil Medvedev": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Felix Auger-Aliassime": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Dino Prizmic": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Hubert Hurkacz": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Sebastian Ofner": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Jenson Brooksby": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Ignacio Buse": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Jannik Sinner": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Nuno Borges": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Marton Fucsovics": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Learner Tien": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Nicolas Mejia": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Michael Zheng": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Stefanos Tsitsipas": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Novak Djokovic": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Rafael Jodar": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Pablo Carreno Busta": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Soonwoo Kwon": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Tommy Paul": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Arthur Rinderknech": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Martin Damm Jr.": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Roman Safiullin": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Botic van de Zandschulp": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Shintaro Mochizuki": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Ethan Quinn": {
+      "elo": 1500,
+      "games": 0
+    }
+  },
+  "tennis_wta_wimbledon": {
+    "Amanda Anisimova": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Lina Gjorcheska": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Anhelina Kalinina": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Kamilla Rakhimova": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Maria Sakkari": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Clara Tauson": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Irina-Camelia Begu": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Katie Swan": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Jasmine Paolini": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Robin Montgomery": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Tereza Valentova": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Karolina Pliskova": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Katie Boulter": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Tyra Caterina Grant": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Kayla Day": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Madison Keys": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Talia Gibson": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Marie Bouzkova": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Petra Marcinko": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Sofia Kenin": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Kimberly Birrell": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Alina Korneeva": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Beatriz Haddad Maia": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Maria Timofeeva": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Iryna Shymanovich": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Viktorija Golubic": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Taylor Townsend": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Iga Swiatek": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Alexandra Eala": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Renata Zarazua": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Yuliia Starodubtseva": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Anna Blinkova": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Elena Gabriela Ruse": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Caty McNally": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Elina Svitolina": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Daria Snigur": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Lois Boisson": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Elena Rybakina": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Elise Mertens": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Laura Siegemund": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Emma Navarro": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Paula Badosa": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Veronika Erjavec": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Leolia Jeanjean": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Oksana Selekhmeteva": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Sinja Kraus": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Sorana Cirstea": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Sara Bejlek": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Ajla Tomljanovic": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Mariam Bolkvadze": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Diana Shnaider": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Eva Lys": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Ella Seidel": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Linda Noskova": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Polina Kudermetova": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Liudmila Samsonova": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Maria Camila Osorio Serrano": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Simona Waltert": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Nadia Podoroska": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Marta Kostyuk": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Serena Williams": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Maya Joint": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Ashlyn Krueger": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Donna Vekic": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Alycia Parks": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Mananchaya Sawangkaew": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Anastasia Gasanova": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Naomi Osaka": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Diane Parry": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Anna Kalinskaya": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Jelena Ostapenko": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Antonia Ruzic": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Aryna Sabalenka": {
+      "elo": 1500,
+      "games": 0
+    },
+    "McCartney Kessler": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Barbora Krejcikova": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Mirra Andreeva": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Belinda Bencic": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Xinyu Wang": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Zeynep Sonmez": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Claire Liu": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Solana Sierra": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Coco Gauff": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Janice Tjen": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Daria Kasatkina": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Dayana Yastremska": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Jessica Bouzas Maneiro": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Ekaterina Alexandrova": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Lanlana Tararudee": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Tatjana Maria": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Iva Jović": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Jessica Pegula": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Sara Sorribes Tormo": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Karolina Muchova": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Shuai Zhang": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Katerina Siniakova": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Nikola Bartunkova": {
+      "elo": 1500,
+      "games": 0
+    }
+  },
+  "americanfootball_nfl": {
+    "Seattle Seahawks": {
+      "elo": 1580,
+      "games": 0
+    },
+    "New England Patriots": {
+      "elo": 1517,
+      "games": 0
+    },
+    "Los Angeles Rams": {
+      "elo": 1500,
+      "games": 0
+    },
+    "San Francisco 49ers": {
+      "elo": 1643,
+      "games": 0
+    },
+    "Pittsburgh Steelers": {
+      "elo": 1573,
+      "games": 0
+    },
+    "Atlanta Falcons": {
+      "elo": 1533,
+      "games": 0
+    },
+    "Indianapolis Colts": {
+      "elo": 1520,
+      "games": 0
+    },
+    "Baltimore Ravens": {
+      "elo": 1640,
+      "games": 0
+    },
+    "Houston Texans": {
+      "elo": 1577,
+      "games": 0
+    },
+    "Buffalo Bills": {
+      "elo": 1623,
+      "games": 0
+    },
+    "Carolina Panthers": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Chicago Bears": {
+      "elo": 1520,
+      "games": 0
+    },
+    "Cincinnati Bengals": {
+      "elo": 1600,
+      "games": 0
+    },
+    "Tampa Bay Buccaneers": {
+      "elo": 1540,
+      "games": 0
+    },
+    "Jacksonville Jaguars": {
+      "elo": 1540,
+      "games": 0
+    },
+    "Cleveland Browns": {
+      "elo": 1553,
+      "games": 0
+    },
+    "Detroit Lions": {
+      "elo": 1617,
+      "games": 0
+    },
+    "New Orleans Saints": {
+      "elo": 1550,
+      "games": 0
+    },
+    "Tennessee Titans": {
+      "elo": 1517,
+      "games": 0
+    },
+    "New York Jets": {
+      "elo": 1567,
+      "games": 0
+    },
+    "Los Angeles Chargers": {
+      "elo": 1587,
+      "games": 0
+    },
+    "Arizona Cardinals": {
+      "elo": 1513,
+      "games": 0
+    },
+    "Minnesota Vikings": {
+      "elo": 1550,
+      "games": 0
+    },
+    "Green Bay Packers": {
+      "elo": 1600,
+      "games": 0
+    },
+    "Las Vegas Raiders": {
+      "elo": 1530,
+      "games": 0
+    },
+    "Miami Dolphins": {
+      "elo": 1597,
+      "games": 0
+    },
+    "Philadelphia Eagles": {
+      "elo": 1630,
+      "games": 0
+    },
+    "Washington Commanders": {
+      "elo": 1540,
+      "games": 0
+    },
+    "New York Giants": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Dallas Cowboys": {
+      "elo": 1593,
+      "games": 0
+    },
+    "Kansas City Chiefs": {
+      "elo": 1650,
+      "games": 0
+    },
+    "Denver Broncos": {
+      "elo": 1527,
+      "games": 0
+    }
+  },
+  "rugbyleague_nrl": {
+    "Penrith Panthers": {
+      "elo": 1633,
+      "games": 0
+    },
+    "South Sydney Rabbitohs": {
+      "elo": 1583,
+      "games": 0
+    },
+    "St George Illawarra Dragons": {
+      "elo": 1507,
+      "games": 0
+    },
+    "Wests Tigers": {
+      "elo": 1487,
+      "games": 0
+    },
+    "Brisbane Broncos": {
+      "elo": 1583,
+      "games": 0
+    },
+    "Cronulla Sutherland Sharks": {
+      "elo": 1540,
+      "games": 0
+    },
+    "Parramatta Eels": {
+      "elo": 1540,
+      "games": 0
+    },
+    "Manly Warringah Sea Eagles": {
+      "elo": 1533,
+      "games": 0
+    },
+    "Newcastle Knights": {
+      "elo": 1520,
+      "games": 0
+    },
+    "Dolphins": {
+      "elo": 1500,
+      "games": 0
+    },
+    "New Zealand Warriors": {
+      "elo": 1533,
+      "games": 0
+    },
+    "Canterbury Bulldogs": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Canberra Raiders": {
+      "elo": 1540,
+      "games": 0
+    },
+    "Sydney Roosters": {
+      "elo": 1613,
+      "games": 0
+    },
+    "North Queensland Cowboys": {
+      "elo": 1540,
+      "games": 0
+    },
+    "Melbourne Storm": {
+      "elo": 1633,
+      "games": 0
+    },
+    "Gold Coast Titans": {
+      "elo": 1500,
+      "games": 0
+    }
+  },
+  "baseball_mlb": {
+    "Baltimore Orioles": {
+      "elo": 1590,
+      "games": 0
+    },
+    "Chicago White Sox": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Cleveland Guardians": {
+      "elo": 1560,
+      "games": 0
+    },
+    "Texas Rangers": {
+      "elo": 1583,
+      "games": 0
+    },
+    "Philadelphia Phillies": {
+      "elo": 1607,
+      "games": 0
+    },
+    "Pittsburgh Pirates": {
+      "elo": 1507,
+      "games": 0
+    },
+    "New York Yankees": {
+      "elo": 1633,
+      "games": 0
+    },
+    "Detroit Tigers": {
+      "elo": 1530,
+      "games": 0
+    },
+    "Toronto Blue Jays": {
+      "elo": 1583,
+      "games": 0
+    },
+    "New York Mets": {
+      "elo": 1583,
+      "games": 0
+    },
+    "Boston Red Sox": {
+      "elo": 1577,
+      "games": 0
+    },
+    "Washington Nationals": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Atlanta Braves": {
+      "elo": 1617,
+      "games": 0
+    },
+    "St. Louis Cardinals": {
+      "elo": 1580,
+      "games": 0
+    },
+    "Milwaukee Brewers": {
+      "elo": 1540,
+      "games": 0
+    },
+    "Cincinnati Reds": {
+      "elo": 1540,
+      "games": 0
+    },
+    "Kansas City Royals": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Tampa Bay Rays": {
+      "elo": 1567,
+      "games": 0
+    },
+    "Chicago Cubs": {
+      "elo": 1550,
+      "games": 0
+    },
+    "San Diego Padres": {
+      "elo": 1593,
+      "games": 0
+    },
+    "Houston Astros": {
+      "elo": 1623,
+      "games": 0
+    },
+    "Minnesota Twins": {
+      "elo": 1540,
+      "games": 0
+    },
+    "Colorado Rockies": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Miami Marlins": {
+      "elo": 1507,
+      "games": 0
+    },
+    "Arizona Diamondbacks": {
+      "elo": 1570,
+      "games": 0
+    },
+    "San Francisco Giants": {
+      "elo": 1550,
+      "games": 0
+    },
+    "Athletics": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Los Angeles Dodgers": {
+      "elo": 1660,
+      "games": 0
+    },
+    "Seattle Mariners": {
+      "elo": 1573,
+      "games": 0
+    },
+    "Los Angeles Angels": {
+      "elo": 1523,
+      "games": 0
+    }
+  },
+  "aussierules_afl": {
+    "Geelong Cats": {
+      "elo": 1607,
+      "games": 0
+    },
+    "Brisbane Lions": {
+      "elo": 1607,
+      "games": 0
+    },
+    "Sydney Swans": {
+      "elo": 1597,
+      "games": 0
+    },
+    "Western Bulldogs": {
+      "elo": 1570,
+      "games": 0
+    },
+    "West Coast Eagles": {
+      "elo": 1507,
+      "games": 0
+    },
+    "Adelaide Crows": {
+      "elo": 1540,
+      "games": 0
+    },
+    "Hawthorn Hawks": {
+      "elo": 1540,
+      "games": 0
+    },
+    "Melbourne Demons": {
+      "elo": 1600,
+      "games": 0
+    },
+    "Greater Western Sydney Giants": {
+      "elo": 1500,
+      "games": 0
+    },
+    "Fremantle Dockers": {
+      "elo": 1560,
+      "games": 0
+    },
+    "Gold Coast Suns": {
+      "elo": 1513,
+      "games": 0
+    },
+    "Collingwood Magpies": {
+      "elo": 1593,
+      "games": 0
+    },
+    "Richmond Tigers": {
+      "elo": 1583,
+      "games": 0
+    },
+    "Carlton Blues": {
+      "elo": 1583,
+      "games": 0
+    },
+    "Essendon Bombers": {
+      "elo": 1540,
+      "games": 0
+    },
+    "St Kilda Saints": {
+      "elo": 1530,
+      "games": 0
+    },
+    "Port Adelaide Power": {
+      "elo": 1583,
+      "games": 0
+    },
+    "North Melbourne Kangaroos": {
+      "elo": 1500,
+      "games": 0
+    }
+  },
+  "cricket_international_t20": {
+    "England": {
+      "elo": 1633,
+      "games": 0
+    },
+    "India": {
+      "elo": 1633,
+      "games": 0
+    },
+    "Sweden": {
+      "elo": 1533,
+      "games": 0
+    },
+    "Portugal": {
+      "elo": 1627,
+      "games": 0
+    }
+  }
+}

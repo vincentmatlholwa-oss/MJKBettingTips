@@ -1,0 +1,59 @@
+{
+  "sportHealth": {
+    "soccer_fifa_world_cup": {
+      "wins": 0,
+      "total": 0,
+      "rate": -1,
+      "lastChecked": "2026-07-10T15:14:20.235Z"
+    },
+    "soccer_epl": {
+      "wins": 0,
+      "total": 0,
+      "rate": -1,
+      "lastChecked": "2026-07-10T15:14:20.235Z"
+    },
+    "tennis_atp_wimbledon": {
+      "wins": 0,
+      "total": 0,
+      "rate": -1,
+      "lastChecked": "2026-07-10T15:14:20.235Z"
+    },
+    "tennis_wta_wimbledon": {
+      "wins": 0,
+      "total": 0,
+      "rate": -1,
+      "lastChecked": "2026-07-10T15:14:20.235Z"
+    },
+    "americanfootball_nfl": {
+      "wins": 0,
+      "total": 0,
+      "rate": -1,
+      "lastChecked": "2026-07-10T15:14:20.235Z"
+    },
+    "rugbyleague_nrl": {
+      "wins": 0,
+      "total": 0,
+      "rate": -1,
+      "lastChecked": "2026-07-10T15:14:20.235Z"
+    },
+    "baseball_mlb": {
+      "wins": 0,
+      "total": 0,
+      "rate": -1,
+      "lastChecked": "2026-07-10T15:14:20.235Z"
+    },
+    "aussierules_afl": {
+      "wins": 0,
+      "total": 0,
+      "rate": -1,
+      "lastChecked": "2026-07-10T15:14:20.235Z"
+    },
+    "cricket_international_t20": {
+      "wins": 0,
+      "total": 0,
+      "rate": -1,
+      "lastChecked": "2026-07-10T15:14:20.235Z"
+    }
+  },
+  "disabledSports": {}
+}

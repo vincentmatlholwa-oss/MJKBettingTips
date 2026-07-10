@@ -1,0 +1,56 @@
+{
+  "soccer_fifa_world_cup": {
+    "eloWeight": 0.25,
+    "poissonWeight": 0.4,
+    "marketWeight": 0.35,
+    "samples": 0
+  },
+  "soccer_epl": {
+    "eloWeight": 0.25,
+    "poissonWeight": 0.4,
+    "marketWeight": 0.35,
+    "samples": 0
+  },
+  "tennis_atp_wimbledon": {
+    "eloWeight": 0.4,
+    "poissonWeight": 0,
+    "marketWeight": 0.6,
+    "samples": 0
+  },
+  "tennis_wta_wimbledon": {
+    "eloWeight": 0.4,
+    "poissonWeight": 0,
+    "marketWeight": 0.6,
+    "samples": 0
+  },
+  "americanfootball_nfl": {
+    "eloWeight": 0.4,
+    "poissonWeight": 0,
+    "marketWeight": 0.6,
+    "samples": 0
+  },
+  "rugbyleague_nrl": {
+    "eloWeight": 0.4,
+    "poissonWeight": 0,
+    "marketWeight": 0.6,
+    "samples": 0
+  },
+  "baseball_mlb": {
+    "eloWeight": 0.4,
+    "poissonWeight": 0,
+    "marketWeight": 0.6,
+    "samples": 0
+  },
+  "aussierules_afl": {
+    "eloWeight": 0.4,
+    "poissonWeight": 0,
+    "marketWeight": 0.6,
+    "samples": 0
+  },
+  "cricket_international_t20": {
+    "eloWeight": 0.4,
+    "poissonWeight": 0,
+    "marketWeight": 0.6,
+    "samples": 0
+  }
+}
