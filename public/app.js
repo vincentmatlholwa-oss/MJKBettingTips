@@ -64,15 +64,15 @@ function updateAuthUI() {
     if (header) header.textContent = currentUser.username + ' — ' + (currentUser.tier.charAt(0).toUpperCase() + currentUser.tier.slice(1));
     var note = document.getElementById('tipLimitNote');
     if (note) {
-      if (currentUser.tier === 'free') note.innerHTML = '50 free tips shown. <a href="#" onclick="showAuthModal(\'register\')" style="color:var(--cyan)">Register</a> for unlimited access.';
-      else note.innerHTML = 'Unlimited tips — ' + currentUser.tier.charAt(0).toUpperCase() + currentUser.tier.slice(1) + ' plan.';
+      if (currentUser.tier === 'free') note.innerHTML = '3 free tips shown. <a href="#" onclick="showAuthModal(\'register\')" style="color:var(--cyan)">Register</a> for more tips.';
+      else note.innerHTML = currentUser.tier.charAt(0).toUpperCase() + currentUser.tier.slice(1) + ' plan — showing ' + (TIERS[currentUser.tier] ? TIERS[currentUser.tier].tipLimit : 'all') + ' tips.';
     }
   } else {
     if (loginBtn) loginBtn.style.display = '';
     if (registerBtn) registerBtn.style.display = '';
     if (userMenu) userMenu.style.display = 'none';
     var note = document.getElementById('tipLimitNote');
-    if (note) note.innerHTML = '50 free tips shown. <a href="#" onclick="showAuthModal(\'register\')" style="color:var(--cyan)">Register</a> for unlimited access.';
+    if (note) note.innerHTML = '3 free tips shown. <a href="#" onclick="showAuthModal(\'register\')" style="color:var(--cyan)">Register</a> for more tips.';
   }
 }
 function checkAdmin() {
@@ -201,7 +201,6 @@ function loadPremiumContent() {
   if (tierInfo.accaBuilder) { html += '<div class="premium-tool"><div class="tool-icon">📊</div><div class="tool-content"><div class="tool-title">Acca Builder</div><div class="tool-desc">Build accumulators from tips below.</div></div></div>'; }
   if (tierInfo.roiDashboard) { html += '<div class="premium-tool" onclick="showSection(\'dashboard\')" style="cursor:pointer"><div class="tool-icon">📈</div><div class="tool-content"><div class="tool-title">ROI Dashboard</div><div class="tool-desc">Track your betting performance.</div></div></div>'; }
   if (tierInfo.sportFiltering) { html += '<div class="premium-tool"><div class="tool-icon">⚙️</div><div class="tool-content"><div class="tool-title">Sport Filtering</div><div class="tool-desc">Select which sports to show.</div></div></div>'; }
-  if (tierInfo.apiAccess) { html += '<div class="premium-tool" onclick="showSection(\'api-keys\')" style="cursor:pointer"><div class="tool-icon">🔑</div><div class="tool-content"><div class="tool-title">API Access</div><div class="tool-desc">Developer API key included.</div></div></div>'; }
   if (tierInfo.monthlyReport) { html += '<div class="premium-tool"><div class="tool-icon">📄</div><div class="tool-content"><div class="tool-title">Monthly Report</div><div class="tool-desc">Detailed monthly performance.</div></div></div>'; }
   if (tierInfo.telegramAlerts) { html += '<div class="premium-tool"><div class="tool-icon">✈️</div><div class="tool-content"><div class="tool-title">Telegram Alerts</div><div class="tool-desc">Live tip notifications.</div></div></div>'; }
   tools.innerHTML = html || '<p style="color:var(--muted)">No additional tools for your plan.</p>';
@@ -432,10 +431,10 @@ function renderTiers() {
   var grid = document.getElementById('tiersGrid');
   if (!grid || !TIERS.free) return;
   var plans = [
-    { key:'free', name:'Free', price:'R0', period:'forever', what:'Basic app access', features:['50 free tips daily','70%+ confidence filter','Acca builder (basic)','Tip history'], btn:'Current Plan', btnClass:'btn-outline', featured:false },
-    { key:'starter', name:'Starter', price:'R700', period:'per week', what:'Free tips + Telegram alerts', features:['Unlimited tips','Daily banker picks','Telegram alerts','All sports coverage'], btn:'Subscribe', btnClass:'btn-outline', featured:false },
-    { key:'pro', name:'Pro', price:'R2500', period:'per week', what:'Everything + VIP tools', features:['Everything in Starter','Acca builder (full)','ROI dashboard','Accumulator tips','Correct score tips'], btn:'Subscribe', btnClass:'btn-blue', featured:true },
-    { key:'elite', name:'Elite', price:'R6570', period:'per month', what:'Full package + API', features:['Everything in Pro','Sport filtering','API key access','Monthly reports','1-on-1 consultations','Early access 6am SAST'], btn:'Subscribe', btnClass:'btn-outline', featured:false }
+    { key:'free', name:'Free', price:'R0', period:'forever', what:'Basic app access', features:['3 tips daily','70%+ confidence filter','Basic match results'], btn:'Current Plan', btnClass:'btn-outline', featured:false },
+    { key:'starter', name:'Starter', price:'R700', period:'per week', what:'10 tips + Telegram alerts', features:['10 tips daily','Daily banker picks','Telegram alerts','All sports coverage'], btn:'Subscribe', btnClass:'btn-outline', featured:false },
+    { key:'pro', name:'Pro', price:'R2500', period:'per week', what:'25 tips + VIP tools', features:['25 tips daily','Acca builder','ROI dashboard','Accumulator tips','Correct score tips'], btn:'Subscribe', btnClass:'btn-blue', featured:true },
+    { key:'elite', name:'Elite', price:'R6570', period:'per month', what:'30 tips + everything', features:['30 tips daily','Sport filtering','Monthly reports','1-on-1 consultations','Early access 6am SAST'], btn:'Subscribe', btnClass:'btn-outline', featured:false }
   ];
   var html = '';
   for (var i = 0; i < plans.length; i++) {
@@ -457,9 +456,9 @@ function renderPremiumPlans() {
   if (!grid || !TIERS.free || !currentUser) return;
   if (currentUser.tier === 'elite') { grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1">You are on the Elite plan — all features unlocked.</div>'; return; }
   var plans = [
-    { key:'starter', name:'Starter', price:'R700', period:'per week', features:['Unlimited tips','Telegram alerts','Daily banker picks'] },
-    { key:'pro', name:'Pro', price:'R2500', period:'per week', features:['Unlimited tips','Acca builder','ROI dashboard','Correct score tips','Accumulators'] },
-    { key:'elite', name:'Elite', price:'R6570', period:'per month', features:['All Pro features','Sport filtering','API key access','Monthly reports','1-on-1 coaching','Early access'] }
+    { key:'starter', name:'Starter', price:'R700', period:'per week', features:['10 tips daily','Telegram alerts','Daily banker picks'] },
+    { key:'pro', name:'Pro', price:'R2500', period:'per week', features:['25 tips daily','Acca builder','ROI dashboard','Correct score tips','Accumulators'] },
+    { key:'elite', name:'Elite', price:'R6570', period:'per month', features:['30 tips daily','Sport filtering','Monthly reports','1-on-1 coaching','Early access'] }
   ];
   var html = '';
   for (var i = 0; i < plans.length; i++) {
