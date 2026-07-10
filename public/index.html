@@ -105,6 +105,10 @@
     <div id="premiumContent" style="display:none;">
       <div class="tips-header" style="margin-top:30px;"><div><div class="section-label">Your Premium Tools</div><div class="section-title">VIP DASHBOARD</div></div></div>
       <div class="premium-tools" id="premiumTools"></div>
+      <div id="sportFilterSection" style="display:none;margin-top:20px;">
+        <div class="section-label" style="margin-bottom:10px;">Sport Filtering</div>
+        <div class="sport-filter-grid" id="sportFilterGrid"></div>
+      </div>
     </div>
   </div>
 </section>
@@ -191,11 +195,25 @@
 <div class="modal-overlay" id="authModal" style="display:none;" onclick="if(event.target===this)closeAuth()">
   <div class="modal auth-modal">
     <div class="modal-title" id="authTitle">Login</div>
-    <div class="auth-form">
+    <div class="auth-form" id="authFormDefault">
       <input type="text" id="authUsername" placeholder="Username" class="auth-input">
       <input type="password" id="authPassword" placeholder="Password" class="auth-input">
       <div class="auth-error" id="authError"></div>
       <button class="btn btn-blue" onclick="handleAuth()" id="authBtn">Login</button>
+      <button class="btn btn-outline" style="margin-top:8px;font-size:12px;padding:6px;" onclick="showForgotPassword()">Forgot Password?</button>
+      <button class="modal-close" onclick="closeAuth()">Cancel</button>
+    </div>
+    <div class="auth-form" id="authFormForgot" style="display:none;">
+      <p style="color:var(--muted);font-size:12px;margin-bottom:8px;">Enter your username to get a reset token.</p>
+      <input type="text" id="forgotUsername" placeholder="Username" class="auth-input">
+      <div id="forgotStep2" style="display:none;">
+        <input type="text" id="forgotToken" placeholder="Reset token" class="auth-input">
+        <input type="password" id="forgotNewPassword" placeholder="New password (4+ chars)" class="auth-input">
+      </div>
+      <div class="auth-error" id="forgotError"></div>
+      <div class="auth-success" id="forgotSuccess" style="display:none;color:#00e676;font-size:12px;margin-bottom:8px;"></div>
+      <button class="btn btn-blue" onclick="handleForgot()" id="forgotBtn">Send Reset</button>
+      <button class="btn btn-outline" style="margin-top:8px;font-size:12px;padding:6px;" onclick="showAuthModal('login')">Back to Login</button>
       <button class="modal-close" onclick="closeAuth()">Cancel</button>
     </div>
   </div>

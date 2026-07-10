@@ -1221,8 +1221,16 @@ app.get('/api/tips', function(req, res) {
   }
   var tier = TIERS[userTier] || TIERS.free;
   var isAdmin = false;
+  var username = '';
   if (header && header.startsWith('Bearer ')) {
-    try { var decoded = jwt.verify(header.split(' ')[1], JWT_SECRET); isAdmin = decoded.role === 'admin'; } catch (e) {}
+    try { var decoded = jwt.verify(header.split(' ')[1], JWT_SECRET); isAdmin = decoded.role === 'admin'; username = decoded.username; } catch (e) {}
+  }
+  // Apply sport filtering for Elite tier
+  if (tier.sportFiltering && username) {
+    var prefs = loadSportPrefs();
+    var userPrefs = prefs[username] || {};
+    var hasFilters = Object.keys(userPrefs).some(function(k) { return userPrefs[k] === false; });
+    if (hasFilters) tips = tips.filter(function(t) { return userPrefs[t.type] !== false; });
   }
   if (!isAdmin && tips.length > tier.tipLimit) tips = tips.slice(0, tier.tipLimit);
   var highConf = tips.filter(function(t) { return t.conf >= 80; });
@@ -1308,14 +1316,15 @@ app.post('/api/premium/sport-prefs', authMiddleware, function(req, res) {
   var tier = TIERS[user.tier] || TIERS.free;
   if (!tier.sportFiltering) return res.status(403).json({ error: 'Elite subscription required for sport filtering' });
   var prefs = loadSportPrefs();
-  prefs[req.user.username] = req.body.sports || [];
+  if (!prefs[req.user.username]) prefs[req.user.username] = {};
+  prefs[req.user.username][req.body.sport] = req.body.enabled;
   saveSportPrefs(prefs);
-  res.json({ success: true, sports: prefs[req.user.username] });
+  res.json({ success: true, prefs: prefs[req.user.username] });
 });
 
 app.get('/api/premium/sport-prefs', authMiddleware, function(req, res) {
   var prefs = loadSportPrefs();
-  res.json({ sports: prefs[req.user.username] || [] });
+  res.json({ prefs: prefs[req.user.username] || {} });
 });
 
 // Premium: API key management
@@ -1455,6 +1464,33 @@ app.get('/api/backtest', authMiddleware, adminMiddleware, function(req, res) {
   });
 });
 
+app.post('/api/auth/forgot-password', function(req, res) {
+  var username = (req.body.username || '').trim().toLowerCase();
+  var users = loadUsers();
+  if (!users[username]) return res.json({ success: true, message: 'If the user exists, a reset link has been generated.' });
+  var resetToken = crypto.randomBytes(32).toString('hex');
+  users[username].resetToken = resetToken;
+  users[username].resetExpires = Date.now() + 3600000;
+  saveUsers(users);
+  console.log('[AUTH] Password reset requested for ' + username + ' — token: ' + resetToken);
+  res.json({ success: true, message: 'Use this reset token: ' + resetToken + ' (valid 1 hour)' });
+});
+
+app.post('/api/auth/reset-password', function(req, res) {
+  var username = (req.body.username || '').trim().toLowerCase();
+  var token = req.body.token || '';
+  var newPassword = req.body.password || '';
+  if (!username || !token || !newPassword || newPassword.length < 4) return res.status(400).json({ error: 'Invalid request. Password must be 4+ chars.' });
+  var users = loadUsers();
+  var user = users[username];
+  if (!user || user.resetToken !== token || !user.resetExpires || Date.now() > user.resetExpires) return res.status(400).json({ error: 'Invalid or expired reset token.' });
+  user.password = hashPassword(newPassword);
+  delete user.resetToken;
+  delete user.resetExpires;
+  saveUsers(users);
+  res.json({ success: true, message: 'Password reset successfully.' });
+});
+
 app.post('/api/subscribe', authMiddleware, function(req, res) {
   var tier = req.body.tier;
   if (!TIERS[tier]) return res.status(400).json({ error: 'Invalid tier' });
@@ -1463,9 +1499,16 @@ app.post('/api/subscribe', authMiddleware, function(req, res) {
   var user = users[req.user.username];
   if (!user) return res.status(401).json({ error: 'User not found' });
   if (user.tier !== 'free') return res.status(400).json({ error: 'Already subscribed. Contact admin to change tier.' });
+  // Notify admin via Telegram (or fallback to console)
+  var msg = '💰 Subscription request: @' + req.user.username + ' wants ' + tier + ' plan (R' + TIERS[tier].price + ')';
+  console.log('[SUB] ' + msg);
+  if (TELEGRAM_BOT_TOKEN) {
+    loadTelegramSubs().forEach(function(s) { sendTelegram(s.chatId, msg); });
+  }
+  // Auto-upgrade for now — switch this when PayFast is added
   user.tier = tier;
   saveUsers(users);
-  res.json({ success: true, tier: tier });
+  res.json({ success: true, tier: tier, message: 'Upgraded to ' + tier + '. Payment integration coming soon.' });
 });
 
 app.use(express.static(path.join(__dirname, 'public')));

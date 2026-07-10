@@ -35,14 +35,21 @@ function apiHeaders() {
   return h;
 }
 
-function apiGet(url) { return fetch(url, { headers: apiHeaders() }).then(function(r) { return r.json(); }); }
-function apiPost(url, body) { return fetch(url, { method: 'POST', headers: apiHeaders(), body: JSON.stringify(body || {}) }).then(function(r) { return r.json(); }); }
+function handleExpired(d) {
+  if (d.error === 'Invalid token' || d.error === 'Unauthorized') {
+    authToken = null; localStorage.removeItem('mjk_token'); currentUser = null; updateAuthUI();
+    return true;
+  }
+  return false;
+}
+function apiGet(url) { return fetch(url, { headers: apiHeaders() }).then(function(r) { return r.json(); }).then(function(d) { handleExpired(d); return d; }); }
+function apiPost(url, body) { return fetch(url, { method: 'POST', headers: apiHeaders(), body: JSON.stringify(body || {}) }).then(function(r) { return r.json(); }).then(function(d) { handleExpired(d); return d; }); }
 
 // === AUTH ===
 function loadAuth() {
   if (!authToken) return;
   apiGet('/api/auth/me').then(function(d) {
-    if (d.error) { authToken = null; localStorage.removeItem('mjk_token'); updateAuthUI(); return; }
+    if (d.error) { authToken = null; localStorage.removeItem('mjk_token'); currentUser = null; updateAuthUI(); return; }
     currentUser = d;
     updateAuthUI();
     loadTiers();
@@ -98,7 +105,56 @@ function showAuthModal(mode) {
   document.getElementById('authError').textContent = '';
   document.getElementById('authUsername').value = '';
   document.getElementById('authPassword').value = '';
+  document.getElementById('authFormDefault').style.display = 'block';
+  document.getElementById('authFormForgot').style.display = 'none';
   closeDropdown();
+}
+function showForgotPassword() {
+  document.getElementById('authFormDefault').style.display = 'none';
+  document.getElementById('authFormForgot').style.display = 'block';
+  document.getElementById('forgotUsername').value = '';
+  document.getElementById('forgotToken').value = '';
+  document.getElementById('forgotNewPassword').value = '';
+  document.getElementById('forgotStep2').style.display = 'none';
+  document.getElementById('forgotError').textContent = '';
+  document.getElementById('forgotSuccess').style.display = 'none';
+  document.getElementById('forgotBtn').textContent = 'Send Reset';
+}
+function handleForgot() {
+  var username = document.getElementById('forgotUsername').value.trim();
+  var token = document.getElementById('forgotToken').value.trim();
+  var password = document.getElementById('forgotNewPassword').value;
+  var btn = document.getElementById('forgotBtn');
+  var err = document.getElementById('forgotError');
+  var success = document.getElementById('forgotSuccess');
+  err.textContent = '';
+  if (!username) { err.textContent = 'Enter your username.'; return; }
+  if (!token) {
+    btn.disabled = true; btn.textContent = 'Sending...';
+    fetch('/api/auth/forgot-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: username }) })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        btn.disabled = false; btn.textContent = 'Send Reset';
+        if (d.error) { err.textContent = d.error; return; }
+        success.style.display = 'block'; success.textContent = d.message;
+        document.getElementById('forgotStep2').style.display = 'block';
+        btn.textContent = 'Reset Password';
+      }).catch(function() { btn.disabled = false; btn.textContent = 'Send Reset'; err.textContent = 'Network error'; });
+  } else {
+    if (!password || password.length < 4) { err.textContent = 'Password must be 4+ characters.'; return; }
+    btn.disabled = true; btn.textContent = 'Resetting...';
+    fetch('/api/auth/reset-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: username, token: token, password: password }) })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        btn.disabled = false;
+        if (d.error) { err.textContent = d.error; btn.textContent = 'Reset Password'; return; }
+        success.textContent = 'Password reset! You can now login.';
+        btn.textContent = 'Done';
+        document.getElementById('forgotToken').value = '';
+        document.getElementById('forgotNewPassword').value = '';
+        showAuthModal('login');
+      }).catch(function() { btn.disabled = false; btn.textContent = 'Reset Password'; err.textContent = 'Network error'; });
+  }
 }
 function closeAuth() {
   var m = document.getElementById('authModal');
@@ -201,9 +257,50 @@ function loadPremiumContent() {
   if (tierInfo.accaBuilder) { html += '<div class="premium-tool"><div class="tool-icon">📊</div><div class="tool-content"><div class="tool-title">Acca Builder</div><div class="tool-desc">Build accumulators from tips below.</div></div></div>'; }
   if (tierInfo.roiDashboard) { html += '<div class="premium-tool" onclick="showSection(\'dashboard\')" style="cursor:pointer"><div class="tool-icon">📈</div><div class="tool-content"><div class="tool-title">ROI Dashboard</div><div class="tool-desc">Track your betting performance.</div></div></div>'; }
   if (tierInfo.sportFiltering) { html += '<div class="premium-tool"><div class="tool-icon">⚙️</div><div class="tool-content"><div class="tool-title">Sport Filtering</div><div class="tool-desc">Select which sports to show.</div></div></div>'; }
-  if (tierInfo.monthlyReport) { html += '<div class="premium-tool"><div class="tool-icon">📄</div><div class="tool-content"><div class="tool-title">Monthly Report</div><div class="tool-desc">Detailed monthly performance.</div></div></div>'; }
+  if (tierInfo.monthlyReport) { html += '<div class="premium-tool" onclick="loadMonthlyReport()" style="cursor:pointer"><div class="tool-icon">📄</div><div class="tool-content"><div class="tool-title">Monthly Report</div><div class="tool-desc">Detailed monthly performance.</div></div></div>'; }
   if (tierInfo.telegramAlerts) { html += '<div class="premium-tool"><div class="tool-icon">✈️</div><div class="tool-content"><div class="tool-title">Telegram Alerts</div><div class="tool-desc">Live tip notifications.</div></div></div>'; }
   tools.innerHTML = html || '<p style="color:var(--muted)">No additional tools for your plan.</p>';
+  if (tierInfo.sportFiltering) loadSportFilter();
+}
+function loadMonthlyReport() {
+  var tools = document.getElementById('premiumTools');
+  apiGet('/api/premium/report').then(function(d) {
+    var html = '<div class="monthly-report" style="background:var(--bg2);border-radius:12px;padding:16px;margin-top:12px;">';
+    html += '<div style="display:flex;justify-content:space-between;margin-bottom:12px;"><span style="color:var(--muted);font-size:12px;">Month: ' + d.month + '</span><span style="font-size:12px;">Total: ' + d.total + ' tips</span></div>';
+    html += '<div style="display:flex;gap:16px;margin-bottom:12px;flex-wrap:wrap;"><div class="dash-card" style="flex:1;min-width:80px;"><div class="dash-label">Win Rate</div><div class="dash-value">' + d.winRate + '%</div></div><div class="dash-card" style="flex:1;min-width:80px;"><div class="dash-label">Won</div><div class="dash-value" style="color:#00e676">' + d.won + '</div></div><div class="dash-card" style="flex:1;min-width:80px;"><div class="dash-label">Lost</div><div class="dash-value" style="color:#ff5252">' + d.lost + '</div></div><div class="dash-card" style="flex:1;min-width:80px;"><div class="dash-label">ROI</div><div class="dash-value">' + d.roi + '%</div></div></div>';
+    html += '<div style="font-size:12px;color:var(--muted);margin-bottom:6px;">By Sport:</div>';
+    for (var sk in d.bySport) {
+      var s = d.bySport[sk];
+      html += '<div style="display:flex;justify-content:space-between;padding:4px 8px;background:var(--bg3);margin:2px 0;border-radius:4px;font-size:12px;"><span>' + sk + '</span><span><span style="color:#00e676">' + s.won + 'W</span> / <span style="color:#ff5252">' + s.lost + 'L</span></span></div>';
+    }
+    html += '</div>';
+    tools.insertAdjacentHTML('afterend', html);
+  }).catch(function() {});
+}
+function loadSportFilter() {
+  var section = document.getElementById('sportFilterSection');
+  var grid = document.getElementById('sportFilterGrid');
+  if (!section || !grid) return;
+  section.style.display = 'block';
+  apiGet('/api/premium/sport-prefs').then(function(d) {
+    var prefs = d.prefs || {};
+    var html = '';
+    for (var i = 0; i < SPORTS.length; i++) {
+      var s = SPORTS[i];
+      var enabled = prefs[s.key] !== false;
+      html += '<label class="filter-chip" style="background:' + (enabled ? 'var(--green-bg)' : 'var(--bg3)') + ';border:1px solid ' + (enabled ? 'var(--green)' : 'var(--border)') + ';border-radius:20px;padding:6px 14px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-size:13px;" data-sport="' + s.key + '"><input type="checkbox" ' + (enabled ? 'checked' : '') + ' style="accent-color:var(--green);width:14px;height:14px;" onchange="toggleSportPref(\'' + s.key + '\',this.checked)">' + (s.icon || '') + ' ' + (s.name || s.key) + '</label>';
+    }
+    grid.innerHTML = html;
+  }).catch(function() {});
+}
+function toggleSportPref(sportKey, enabled) {
+  apiPost('/api/premium/sport-prefs', { sport: sportKey, enabled: enabled }).then(function(d) {
+    var labels = document.querySelectorAll('.filter-chip[data-sport="' + sportKey + '"]');
+    for (var i = 0; i < labels.length; i++) {
+      labels[i].style.background = enabled ? 'var(--green-bg)' : 'var(--bg3)';
+      labels[i].style.borderColor = enabled ? 'var(--green)' : 'var(--border)';
+    }
+  }).catch(function() {});
 }
 
 // === ADMIN ===
