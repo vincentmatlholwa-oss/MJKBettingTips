@@ -96,6 +96,7 @@ section{position:relative;z-index:1;}
 .sport-mlb{background:rgba(255,180,50,.15);color:#f0c040;border-bottom:1px solid rgba(255,180,50,.2);}
 .sport-aussierules{background:rgba(200,100,255,.15);color:#c080ff;border-bottom:1px solid rgba(200,100,255,.2);}
 .sport-cricket{background:rgba(0,220,200,.15);color:#40e0d0;border-bottom:1px solid rgba(0,220,200,.2);}
+.sport-horse{background:rgba(255,180,50,.15);color:#f0b030;border-bottom:1px solid rgba(255,180,50,.2);}
 .sport-friendly{background:rgba(0,230,118,.12);color:#6fffb0;border-bottom:1px solid rgba(0,230,118,.15);}
 .sport-intl{background:rgba(240,180,41,.12);color:#ffe080;border-bottom:1px solid rgba(240,180,41,.15);}
 .league-chip{font-size:9px;opacity:.8;letter-spacing:1px;}

@@ -37,6 +37,10 @@ const MODEL_COEFFS_FILE = path.join(__dirname, 'data', 'model_coeffs.json');
 const FEATURE_LOG_FILE = path.join(__dirname, 'data', 'feature_log.json');
 const SPORT_HEALTH_FILE = path.join(__dirname, 'data', 'sport_health.json');
 const CACHED_ODDS_FILE = path.join(__dirname, 'data', 'cached_odds.json');
+const RACING_EVENTS_FILE = path.join(__dirname, 'data', 'racing_events.json');
+
+const HORSE_RACING_API_KEY = process.env.HORSE_RACING_API_KEY || '';
+const HORSE_RACING_API_BASE = 'https://api.odds-api.net/v1';
 
 const SPORTS = [
   { key: 'soccer_fifa_world_cup', name: 'FIFA World Cup', icon: '\u26BD' },
@@ -47,7 +51,8 @@ const SPORTS = [
   { key: 'rugbyleague_nrl', name: 'NRL', icon: '\uD83C\uDFC9' },
   { key: 'baseball_mlb', name: 'MLB', icon: '\u26BE' },
   { key: 'aussierules_afl', name: 'AFL', icon: '\uD83C\uDFC9' },
-  { key: 'cricket_international_t20', name: 'T20 Cricket', icon: '\uD83C\uDFCF' }
+  { key: 'cricket_international_t20', name: 'T20 Cricket', icon: '\uD83C\uDFCF' },
+  { key: 'horse_racing', name: 'Horse Racing', icon: '\uD83C\uDFC7' }
 ];
 
 const COUNTRY_MAP = {
@@ -59,7 +64,8 @@ const COUNTRY_MAP = {
   'rugbyleague_nrl': 'Australia',
   'baseball_mlb': 'USA',
   'aussierules_afl': 'Australia',
-  'cricket_international_t20': 'International'
+  'cricket_international_t20': 'International',
+  'horse_racing': 'International'
 };
 
 // === Per-sport config for specialized predictions ===
@@ -72,15 +78,16 @@ const SPORT_CONFIG = {
   'rugbyleague_nrl': { hasDraw: true, homeAdv: 1.15, kFactor: 36, formWindow: 4, minConf: 65, maxConf: 95, usePoisson: false, dcRho: -0.08 },
   'baseball_mlb': { hasDraw: false, homeAdv: 1.10, kFactor: 36, formWindow: 5, minConf: 65, maxConf: 95, usePoisson: false, dcRho: 0 },
   'aussierules_afl': { hasDraw: true, homeAdv: 1.15, kFactor: 36, formWindow: 4, minConf: 65, maxConf: 95, usePoisson: false, dcRho: -0.08 },
-  'cricket_international_t20': { hasDraw: false, homeAdv: 1.10, kFactor: 36, formWindow: 4, minConf: 65, maxConf: 95, usePoisson: false, dcRho: 0 }
+  'cricket_international_t20': { hasDraw: false, homeAdv: 1.10, kFactor: 36, formWindow: 4, minConf: 65, maxConf: 95, usePoisson: false, dcRho: 0 },
+  'horse_racing': { hasDraw: false, homeAdv: 1.0, kFactor: 32, formWindow: 3, minConf: 60, maxConf: 92, usePoisson: false, dcRho: 0 }
 };
 function getCfg(key) { return SPORT_CONFIG[key] || { hasDraw: true, homeAdv: 1.10, kFactor: 32, formWindow: 5, minConf: 68, maxConf: 96, usePoisson: false, dcRho: 0 }; }
 
 const TIERS = {
-  free:  { name: 'Free', tipLimit: 3, earlyAccess: false, bankersOnly: false, sportFiltering: false, accaBuilder: false, roiDashboard: false, telegramAlerts: false, monthlyReport: false, price: 0 },
-  starter: { name: 'Starter', tipLimit: 10, earlyAccess: false, bankersOnly: false, sportFiltering: false, accaBuilder: false, roiDashboard: false, telegramAlerts: true, monthlyReport: false, price: 700 },
-  pro: { name: 'Pro', tipLimit: 25, earlyAccess: false, bankersOnly: false, sportFiltering: false, accaBuilder: true, roiDashboard: true, telegramAlerts: true, monthlyReport: false, price: 2500 },
-  elite: { name: 'Elite', tipLimit: 30, earlyAccess: true, bankersOnly: true, sportFiltering: true, accaBuilder: true, roiDashboard: true, telegramAlerts: true, monthlyReport: true, price: 6570 }
+  free:  { name: 'Free', tipLimit: 3, earlyAccess: false, bankersOnly: false, sportFiltering: false, accaBuilder: false, roiDashboard: false, telegramAlerts: false, monthlyReport: false, horseRacing: false, price: 0 },
+  starter: { name: 'Starter', tipLimit: 10, earlyAccess: false, bankersOnly: false, sportFiltering: false, accaBuilder: false, roiDashboard: false, telegramAlerts: true, monthlyReport: false, horseRacing: false, price: 700 },
+  pro: { name: 'Pro', tipLimit: 25, earlyAccess: false, bankersOnly: false, sportFiltering: false, accaBuilder: true, roiDashboard: true, telegramAlerts: true, monthlyReport: false, horseRacing: true, price: 2500 },
+  elite: { name: 'Elite', tipLimit: 30, earlyAccess: true, bankersOnly: true, sportFiltering: true, accaBuilder: true, roiDashboard: true, telegramAlerts: true, monthlyReport: true, horseRacing: true, price: 6570 }
 };
 
 let teamRatings = {};
@@ -900,6 +907,31 @@ async function refreshTips() {
       saveCachedOdds();
     }
   }
+  // Fetch horse racing if API key is set
+  if (HORSE_RACING_API_KEY) {
+    await fetchHorseRacing();
+    if (cachedRacingEvents && cachedRacingEvents.length > 0) {
+      var racingTips = [];
+      for (var ri = 0; ri < cachedRacingEvents.length; ri++) {
+        var rt = buildHorseRacingTip(cachedRacingEvents[ri]);
+        if (rt) racingTips.push(rt);
+      }
+      console.log('[HORSE] Generated ' + racingTips.length + ' horse racing tips from ' + cachedRacingEvents.length + ' races');
+      allTips = allTips.concat(racingTips);
+    } else {
+      // Try loading cached
+      loadRacingEvents();
+      if (cachedRacingEvents && cachedRacingEvents.length > 0) {
+        var racingTips = [];
+        for (var ri = 0; ri < cachedRacingEvents.length; ri++) {
+          var rt = buildHorseRacingTip(cachedRacingEvents[ri]);
+          if (rt) racingTips.push(rt);
+        }
+        console.log('[HORSE] Using cached — ' + racingTips.length + ' tips');
+        allTips = allTips.concat(racingTips);
+      }
+    }
+  }
   var allTips = [];
   for (var si = 0; si < SPORTS.length; si++) {
     var sport = SPORTS[si];
@@ -956,6 +988,60 @@ function mapFootballDataFixture(match) {
   var comp = match.competition ? match.competition.name : 'International';
   var stage = match.stage ? match.stage.replace(/_/g, ' ').replace(/\b\w/g, function(l) { return l.toUpperCase(); }) : '';
   return { homeTeam: home, awayTeam: away, league: comp + (stage ? ' \u2014 ' + stage : ''), kickoff: match.utcDate || new Date().toISOString() };
+}
+
+// === HORSE RACING ===
+var cachedRacingEvents = [];
+function loadRacingEvents() { cachedRacingEvents = loadJSON(RACING_EVENTS_FILE, []); }
+function saveRacingEvents() { saveJSON(RACING_EVENTS_FILE, cachedRacingEvents); }
+
+async function fetchHorseRacing() {
+  if (!HORSE_RACING_API_KEY) return;
+  try {
+    var res = await fetch(HORSE_RACING_API_BASE + '/racing/events', {
+      headers: { 'X-API-Key': HORSE_RACING_API_KEY }
+    });
+    if (!res.ok) { console.log('[HORSE] API error: ' + res.status); return; }
+    var events = await res.json();
+    if (!events || !events.length) { console.log('[HORSE] No events returned'); return; }
+    cachedRacingEvents = events;
+    saveRacingEvents();
+    console.log('[HORSE] Fetched ' + events.length + ' races');
+  } catch (e) { console.log('[HORSE] Fetch error: ' + (e.message || e)); }
+}
+
+function buildHorseRacingTip(event) {
+  var name = event.name || event.event_name || 'Race';
+  var track = event.track || event.venue || '';
+  var time = event.start_time || event.commence_time || event.time || '';
+  var runners = event.runners || event.participants || event.entries || [];
+  if (!runners || runners.length < 3) return null;
+
+  var cfg = getCfg('horse_racing');
+  var pick = null, bestProb = 0, bestOdds = 0;
+  for (var i = 0; i < runners.length; i++) {
+    var r = runners[i];
+    var odds = r.odds || r.price || r.decimal_odds || 0;
+    var prob = odds > 0 ? 1 / odds : 0;
+    if (prob > bestProb) {
+      bestProb = prob;
+      bestOdds = odds;
+      pick = r.name || r.runner || r.horse || 'Runner ' + (i + 1);
+    }
+  }
+  if (!pick || bestOdds <= 0) return null;
+  var conf = Math.min(cfg.maxConf, Math.max(cfg.minConf, Math.round(bestProb * 100)));
+  if (conf < cfg.minConf) return null;
+  return {
+    type: 'horse_racing', sport: 'Horse Racing', icon: '\uD83C\uDFC7',
+    match: track ? track + ' — ' + name : name,
+    league: track || 'Horse Racing', country: 'International',
+    marketType: 'h2h', market: 'Race Winner', marketLine: null,
+    kickoff: time, pick: pick + ' to Win', odds: bestOdds.toFixed(2),
+    conf: conf, realOdds: null, bookmaker: '', valueBet: false,
+    reason: 'AI Horse Racing — Form analysis (' + runners.length + ' runners)',
+    features: [0, 0, 0, 0, 0, 0, 0, 1]
+  };
 }
 
 // === TELEGRAM BOT (Long Polling) ===
@@ -1084,7 +1170,8 @@ async function handleTelegramMessage(msg) {
       'nrl': 'rugbyleague', 'rugby league': 'rugbyleague', 'rugby': 'rugbyleague',
       'mlb': 'baseball', 'baseball': 'baseball',
       'afl': 'aussierules', 'aussie rules': 'aussierules', 'australian football': 'aussierules',
-      'cricket': 'cricket', 't20': 'cricket'
+      'cricket': 'cricket', 't20': 'cricket',
+      'horse': 'horse_racing', 'horse racing': 'horse_racing', 'racing': 'horse_racing'
     };
     var matchKey = sportMap[query] || query;
     var tips = upcomingTips(cachedTips.filter(function(t) { return t.type.toLowerCase().indexOf(matchKey) >= 0 || t.sport.toLowerCase().indexOf(query) >= 0; }), 15);
@@ -1225,6 +1312,8 @@ app.get('/api/tips', function(req, res) {
   if (header && header.startsWith('Bearer ')) {
     try { var decoded = jwt.verify(header.split(' ')[1], JWT_SECRET); isAdmin = decoded.role === 'admin'; username = decoded.username; } catch (e) {}
   }
+  // Hide horse racing tips for tiers without access
+  if (!tier.horseRacing) tips = tips.filter(function(t) { return t.type !== 'horse_racing'; });
   // Apply sport filtering for Elite tier
   if (tier.sportFiltering && username) {
     var prefs = loadSportPrefs();

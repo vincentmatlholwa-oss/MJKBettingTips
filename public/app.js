@@ -391,6 +391,7 @@ function renderTip(t, accaIdx) {
   else if (t.type && t.type.indexOf('baseball_') === 0) sportClass = 'sport-mlb';
   else if (t.type && t.type.indexOf('aussierules_') === 0) sportClass = 'sport-aussierules';
   else if (t.type && t.type.indexOf('cricket_') === 0) sportClass = 'sport-cricket';
+  else if (t.type === 'horse_racing') sportClass = 'sport-horse';
   var oddsHtml = '<div style="text-align:right"><div class="tip-odds">'+t.odds+'</div><div class="tip-odds-label">AI ODDS</div></div>';
   if (t.realOdds && t.realOdds.home) {
     var isHomePick = t.pick && t.match && t.pick.indexOf(t.match.split(' vs ')[0]) !== -1;
@@ -529,9 +530,9 @@ function renderTiers() {
   if (!grid || !TIERS.free) return;
   var plans = [
     { key:'free', name:'Free', price:'R0', period:'forever', what:'Basic app access', features:['3 tips daily','70%+ confidence filter','Basic match results'], btn:'Current Plan', btnClass:'btn-outline', featured:false },
-    { key:'starter', name:'Starter', price:'R700', period:'per week', what:'10 tips + Telegram alerts', features:['10 tips daily','Daily banker picks','Telegram alerts','All sports coverage'], btn:'Subscribe', btnClass:'btn-outline', featured:false },
-    { key:'pro', name:'Pro', price:'R2500', period:'per week', what:'25 tips + VIP tools', features:['25 tips daily','Acca builder','ROI dashboard','Accumulator tips','Correct score tips'], btn:'Subscribe', btnClass:'btn-blue', featured:true },
-    { key:'elite', name:'Elite', price:'R6570', period:'per month', what:'30 tips + everything', features:['30 tips daily','Sport filtering','Monthly reports','1-on-1 consultations','Early access 6am SAST'], btn:'Subscribe', btnClass:'btn-outline', featured:false }
+    { key:'starter', name:'Starter', price:'R700', period:'per week', what:'10 tips + Telegram alerts', features:['10 tips daily','Daily banker picks','Telegram alerts','All sports coverage (exc. horse racing)'], btn:'Subscribe', btnClass:'btn-outline', featured:false },
+    { key:'pro', name:'Pro', price:'R2500', period:'per week', what:'25 tips + VIP tools + Horse Racing', features:['25 tips daily','Horse racing tips','Acca builder','ROI dashboard','Accumulator tips','Correct score tips'], btn:'Subscribe', btnClass:'btn-blue', featured:true },
+    { key:'elite', name:'Elite', price:'R6570', period:'per month', what:'30 tips + Horse Racing + everything', features:['30 tips daily','Horse racing tips','Sport filtering','Monthly reports','1-on-1 consultations','Early access 6am SAST'], btn:'Subscribe', btnClass:'btn-outline', featured:false }
   ];
   var html = '';
   for (var i = 0; i < plans.length; i++) {
@@ -554,8 +555,8 @@ function renderPremiumPlans() {
   if (currentUser.tier === 'elite') { grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1">You are on the Elite plan — all features unlocked.</div>'; return; }
   var plans = [
     { key:'starter', name:'Starter', price:'R700', period:'per week', features:['10 tips daily','Telegram alerts','Daily banker picks'] },
-    { key:'pro', name:'Pro', price:'R2500', period:'per week', features:['25 tips daily','Acca builder','ROI dashboard','Correct score tips','Accumulators'] },
-    { key:'elite', name:'Elite', price:'R6570', period:'per month', features:['30 tips daily','Sport filtering','Monthly reports','1-on-1 coaching','Early access'] }
+    { key:'pro', name:'Pro', price:'R2500', period:'per week', features:['25 tips daily','Horse racing tips','Acca builder','ROI dashboard','Correct score tips','Accumulators'] },
+    { key:'elite', name:'Elite', price:'R6570', period:'per month', features:['30 tips daily','Horse racing tips','Sport filtering','Monthly reports','1-on-1 coaching','Early access'] }
   ];
   var html = '';
   for (var i = 0; i < plans.length; i++) {
@@ -620,7 +621,7 @@ function fetchStats() {
   }).catch(function() {});
 }
 function getSportIcon(type) {
-  var icons = { 'soccer_fifa_world_cup':'⚽','soccer_epl':'⚽','tennis_atp_wimbledon':'🎾','tennis_wta_wimbledon':'🎾','americanfootball_nfl':'🏈','rugbyleague_nrl':'🏉','baseball_mlb':'⚾','aussierules_afl':'🏉','cricket_international_t20':'🏏' };
+  var icons = { 'soccer_fifa_world_cup':'⚽','soccer_epl':'⚽','tennis_atp_wimbledon':'🎾','tennis_wta_wimbledon':'🎾','americanfootball_nfl':'🏈','rugbyleague_nrl':'🏉','baseball_mlb':'⚾','aussierules_afl':'🏉','cricket_international_t20':'🏏','horse_racing':'🏇' };
   return icons[type] || '⚽';
 }
 function fetchHistory() {
