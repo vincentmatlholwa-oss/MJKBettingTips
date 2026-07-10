@@ -445,7 +445,7 @@ function renderTiers() {
     html += '</ul>';
     if (isCurrent) html += '<button class="btn btn-outline" disabled style="opacity:0.5">✓ Current</button>';
     else if (p.key === 'free') html += '<button class="btn btn-outline" onclick="showAuthModal(\'register\')">Get Started</button>';
-    else html += '<button class="btn ' + p.btnClass + '" onclick="openSubModal(\'' + p.name + '\',\'' + p.price + '\')">' + p.btn + '</button>';
+    else html += '<button class="btn ' + p.btnClass + '" onclick="openSubModal(\'' + p.name + '\',\'' + p.price + '\',\'' + p.key + '\')">' + p.btn + '</button>';
     html += '</div>';
   }
   grid.innerHTML = html;
@@ -474,14 +474,32 @@ function renderPremiumPlans() {
   grid.innerHTML = html;
 }
 
-function openSubModal(plan, price) {
+function openSubModal(plan, price, tierKey) {
   var m = document.getElementById('subModal');
   if (!m) return;
+  if (!currentUser) { showAuthModal('login'); return; }
   m.style.display = 'flex';
   m.classList.add('open');
   document.getElementById('subTitle').textContent = plan + ' Plan — ' + price;
-  document.getElementById('subDesc').textContent = 'Contact us on WhatsApp to activate the ' + plan + ' plan.';
-  document.getElementById('subWaLink').href = 'https://wa.me/27677834591?text=Hi%20MJK%20Betting%20Tips%2C%20I%20want%20to%20subscribe%20to%20the%20' + encodeURIComponent(plan) + '%20plan';
+  document.getElementById('subDesc').textContent = 'Confirm upgrade to the ' + plan + ' plan.';
+  document.getElementById('subWaLink').style.display = 'none';
+  document.getElementById('subConfirmBtn').style.display = 'block';
+  document.getElementById('subConfirmBtn').onclick = function() {
+    document.getElementById('subConfirmBtn').disabled = true;
+    document.getElementById('subConfirmBtn').textContent = 'Processing...';
+    apiPost('/api/subscribe', { tier: tierKey }).then(function(d) {
+      if (d.error) { alert(d.error); document.getElementById('subConfirmBtn').disabled = false; document.getElementById('subConfirmBtn').textContent = 'Subscribe'; return; }
+      currentUser.tier = tierKey;
+      updateAuthUI();
+      checkAdmin();
+      closeSub();
+      showSection('premium');
+      renderPremiumPlans();
+    }).catch(function() {
+      document.getElementById('subConfirmBtn').disabled = false;
+      document.getElementById('subConfirmBtn').textContent = 'Subscribe';
+    });
+  };
 }
 function closeSub() {
   var m = document.getElementById('subModal');

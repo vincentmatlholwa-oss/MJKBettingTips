@@ -1455,6 +1455,19 @@ app.get('/api/backtest', authMiddleware, adminMiddleware, function(req, res) {
   });
 });
 
+app.post('/api/subscribe', authMiddleware, function(req, res) {
+  var tier = req.body.tier;
+  if (!TIERS[tier]) return res.status(400).json({ error: 'Invalid tier' });
+  if (tier === 'free') return res.status(400).json({ error: 'Already on free tier' });
+  var users = loadUsers();
+  var user = users[req.user.username];
+  if (!user) return res.status(401).json({ error: 'User not found' });
+  if (user.tier !== 'free') return res.status(400).json({ error: 'Already subscribed. Contact admin to change tier.' });
+  user.tier = tier;
+  saveUsers(users);
+  res.json({ success: true, tier: tier });
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 loadTrackedTips(); loadElo(); loadForm(); loadWeights(); loadCalibration(); loadTeamStats(); loadH2H(); loadMatchDates(); loadModelCoeffs(); loadFeatureLogs(); loadSportHealth(); loadCachedOdds();
