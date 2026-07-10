@@ -468,7 +468,7 @@ function renderPremiumPlans() {
     for (var f = 0; f < p.features.length; f++) html += '<li>' + p.features[f] + '</li>';
     html += '</ul>';
     if (isCurrent) html += '<button class="btn btn-outline" disabled style="opacity:0.5">✓ Current</button>';
-    else html += '<button class="btn btn-blue" onclick="openSubModal(\'' + p.name + '\',\'' + p.price + '\')">Upgrade</button>';
+    else html += '<button class="btn btn-blue" onclick="openSubModal(\'' + p.name + '\',\'' + p.price + '\',\'' + p.key + '\')">Upgrade</button>';
     html += '</div>';
   }
   grid.innerHTML = html;
