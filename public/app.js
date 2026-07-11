@@ -656,21 +656,23 @@ function renderPremiumPlans() {
 
 function openSubModal(plan, price, tierKey) {
   var m = document.getElementById('subModal');
-  if (!m) return;
+  if (!m) { console.error('[PAY] subModal not found'); return; }
   if (!currentUser) { showAuthModal('login'); return; }
   m.style.display = 'flex';
   m.classList.add('open');
   document.getElementById('subTitle').textContent = plan + ' Plan — ' + price;
   document.getElementById('subDesc').textContent = 'Choose your payment method to upgrade to ' + plan + '.';
 
-  // Show both PayFast and WhatsApp options
   var payfastBtn = document.getElementById('subPayfastBtn');
   var waLink = document.getElementById('subWaLink');
   if (payfastBtn) {
     payfastBtn.style.display = 'block';
     payfastBtn.disabled = false;
     payfastBtn.textContent = '💳 Pay with PayFast (' + price + ')';
-    payfastBtn.onclick = function() { payWithPayfast(tierKey, payfastBtn); };
+    payfastBtn.onclick = function() { console.log('[PAY] PayFast clicked, tier:', tierKey); payWithPayfast(tierKey, payfastBtn); };
+    console.log('[PAY] PayFast button ready for tier:', tierKey);
+  } else {
+    console.error('[PAY] subPayfastBtn not found in DOM');
   }
   if (waLink) {
     waLink.style.display = 'flex';
@@ -682,16 +684,22 @@ function openSubModal(plan, price, tierKey) {
 }
 
 function payWithPayfast(tierKey, btn) {
+  console.log('[PAY] payWithPayfast called with tier:', tierKey);
   if (btn) { btn.disabled = true; btn.textContent = 'Creating payment...'; }
   apiPost('/api/pay/create', { tier: tierKey }).then(function(d) {
+    console.log('[PAY] API response:', JSON.stringify(d).slice(0, 200));
     if (d.error) { alert(d.error); if (btn) { btn.disabled = false; btn.textContent = '💳 Pay with PayFast'; } return; }
     if (d.formHtml) {
-      // Submit form to PayFast
       var div = document.createElement('div');
       div.innerHTML = d.formHtml;
       document.body.appendChild(div);
+    } else {
+      console.error('[PAY] No formHtml in response');
+      alert('Payment setup failed — no redirect form');
+      if (btn) { btn.disabled = false; btn.textContent = '💳 Pay with PayFast'; }
     }
   }).catch(function(e) {
+    console.error('[PAY] Error:', e);
     alert('Payment error: ' + (e.message || 'Unknown'));
     if (btn) { btn.disabled = false; btn.textContent = '💳 Pay with PayFast'; }
   });
