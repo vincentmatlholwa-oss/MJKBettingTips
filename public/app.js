@@ -220,7 +220,7 @@ function showSection(name) {
   }
   if (name === 'dashboard') loadDashboard();
   if (name === 'api-keys') loadApiKey();
-  if (name === 'admin') { loadAdminUsers(); loadBacktest(); }
+  if (name === 'admin') { loadAdminUsers(); loadAdminStats(); loadBacktest(); }
   if (name === 'premium') loadPremiumContent();
 }
 
@@ -304,25 +304,80 @@ function toggleSportPref(sportKey, enabled) {
 }
 
 // === ADMIN ===
+var ALL_ADMIN_USERS = [];
 function loadAdminUsers() {
   apiGet('/api/admin/users').then(function(d) {
-    if (d.error) { document.getElementById('adminPanel').innerHTML = '<p style="color:var(--red)">' + d.error + '</p>'; return; }
-    var html = '<div style="display:grid;gap:8px;margin-top:16px;">';
-    for (var i = 0; i < d.length; i++) {
-      html += '<div class="admin-user-row"><span style="font-weight:700;color:#fff">' + d[i].username + '</span> <span class="tier-badge tier-' + d[i].tier + '">' + d[i].tier + '</span> <span style="color:var(--muted);font-size:11px;">' + (d[i].role === 'admin' ? '👑 Admin' : 'User') + '</span></div>';
-    }
-    html += '</div>';
-    document.getElementById('adminUserList').innerHTML = html;
+    if (d.error) return;
+    ALL_ADMIN_USERS = d.users || [];
+    renderAdminUsers(ALL_ADMIN_USERS);
+    loadAdminStats();
+  }).catch(function() {});
+}
+function renderAdminUsers(users) {
+  var html = '';
+  for (var i = 0; i < users.length; i++) {
+    var u = users[i];
+    var roleIcon = u.role === 'admin' ? '👑' : '';
+    var created = u.createdAt ? new Date(u.createdAt).toLocaleDateString('en-ZA') : '';
+    html += '<div class="admin-user-row" style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:var(--bg3);border-radius:8px;margin-bottom:6px;cursor:pointer;" onclick="selectAdminUser(\'' + u.username + '\',\'' + u.tier + '\')">' +
+      '<div><span style="font-weight:700;color:#fff">' + roleIcon + ' ' + u.username + '</span> <span class="tier-badge tier-' + u.tier + '" style="margin-left:6px;">' + u.tier + '</span></div>' +
+      '<div style="display:flex;gap:8px;align-items:center"><span style="color:var(--muted);font-size:11px;">' + created + '</span>' +
+      '<select style="background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:4px 8px;color:#fff;font-size:11px;" onclick="event.stopPropagation()" onchange="quickSetTier(\'' + u.username + '\',this.value)">' +
+      '<option value="free"' + (u.tier === 'free' ? ' selected' : '') + '>Free</option>' +
+      '<option value="starter"' + (u.tier === 'starter' ? ' selected' : '') + '>Starter</option>' +
+      '<option value="pro"' + (u.tier === 'pro' ? ' selected' : '') + '>Pro</option>' +
+      '<option value="elite"' + (u.tier === 'elite' ? ' selected' : '') + '>Elite</option>' +
+      '</select></div></div>';
+  }
+  if (users.length === 0) html = '<div class="empty-state">No users found</div>';
+  document.getElementById('adminUserList').innerHTML = html;
+}
+function filterAdminUsers() {
+  var q = document.getElementById('adminSearchUser').value.toLowerCase();
+  var filtered = ALL_ADMIN_USERS.filter(function(u) { return u.username.toLowerCase().indexOf(q) >= 0; });
+  renderAdminUsers(filtered);
+}
+function selectAdminUser(username, tier) {
+  document.getElementById('adminTargetUser').value = username;
+  document.getElementById('adminTargetTier').value = tier;
+}
+function quickSetTier(username, tier) {
+  apiPost('/api/admin/set-tier', { username: username, tier: tier }).then(function(d) {
+    if (d.error) { alert(d.error); return; }
+    loadAdminUsers();
   }).catch(function() {});
 }
 function adminSetTier() {
   var username = document.getElementById('adminTargetUser').value.trim();
   var tier = document.getElementById('adminTargetTier').value;
-  if (!username) return;
+  if (!username) return alert('Enter a username');
   apiPost('/api/admin/set-tier', { username: username, tier: tier }).then(function(d) {
     if (d.error) { alert(d.error); return; }
-    alert('Set ' + username + ' to ' + tier);
+    alert(username + ' upgraded to ' + tier);
     loadAdminUsers();
+  }).catch(function() {});
+}
+function adminDeleteUser() {
+  var username = document.getElementById('adminTargetUser').value.trim();
+  if (!username) return alert('Enter a username');
+  if (!confirm('Delete user ' + username + '? This cannot be undone.')) return;
+  apiPost('/api/admin/delete-user', { username: username }).then(function(d) {
+    if (d.error) { alert(d.error); return; }
+    loadAdminUsers();
+  }).catch(function() {});
+}
+function loadAdminStats() {
+  apiGet('/api/admin/stats').then(function(d) {
+    if (d.error) return;
+    var el = function(id) { return document.getElementById(id); };
+    if (el('adminTotalUsers')) el('adminTotalUsers').textContent = d.totalUsers || 0;
+    if (el('adminWinRate')) el('adminWinRate').textContent = (d.winRate || '0') + '%';
+    if (el('adminTotalTips')) el('adminTotalTips').textContent = d.totalTips || 0;
+    if (el('adminTgSubs')) el('adminTgSubs').textContent = d.telegramSubs || 0;
+    if (el('adminFreeCount')) el('adminFreeCount').textContent = d.tiers ? (d.tiers.free || 0) : 0;
+    if (el('adminProCount')) el('adminProCount').textContent = d.tiers ? ((d.tiers.pro || 0) + (d.tiers.starter || 0)) : 0;
+    if (el('adminEliteCount')) el('adminEliteCount').textContent = d.tiers ? (d.tiers.elite || 0) : 0;
+    if (el('adminPending')) el('adminPending').textContent = d.pendingTips || 0;
   }).catch(function() {});
 }
 function loadBacktest() {
@@ -656,54 +711,20 @@ function renderPremiumPlans() {
 
 function openSubModal(plan, price, tierKey) {
   var m = document.getElementById('subModal');
-  if (!m) { console.error('[PAY] subModal not found'); return; }
+  if (!m) return;
   if (!currentUser) { showAuthModal('login'); return; }
   m.style.display = 'flex';
   m.classList.add('open');
   document.getElementById('subTitle').textContent = plan + ' Plan — ' + price;
-  document.getElementById('subDesc').textContent = 'Choose your payment method to upgrade to ' + plan + '.';
-
-  var payfastBtn = document.getElementById('subPayfastBtn');
+  document.getElementById('subDesc').textContent = 'Contact us to activate your plan. Admin will upgrade within 1 hour of payment confirmation.';
   var waLink = document.getElementById('subWaLink');
-  if (payfastBtn) {
-    payfastBtn.style.display = 'block';
-    payfastBtn.disabled = false;
-    payfastBtn.textContent = '💳 Pay with PayFast (' + price + ')';
-    payfastBtn.onclick = function() { console.log('[PAY] PayFast clicked, tier:', tierKey); payWithPayfast(tierKey, payfastBtn); };
-    console.log('[PAY] PayFast button ready for tier:', tierKey);
-  } else {
-    console.error('[PAY] subPayfastBtn not found in DOM');
-  }
   if (waLink) {
     waLink.style.display = 'flex';
-    waLink.href = 'https://wa.me/27677834591?text=' + encodeURIComponent('Hi MJK, I want to upgrade to the ' + plan + ' plan (' + price + '). My username is: ' + currentUser.username);
-    waLink.textContent = '💬 Pay via WhatsApp instead';
+    waLink.href = 'https://wa.me/27677834591?text=' + encodeURIComponent('Hi MJK, I want to upgrade to the ' + plan + ' plan (' + price + '/week). My username is: ' + currentUser.username);
+    waLink.textContent = '💬 Chat on WhatsApp to Pay';
   }
-
-  document.getElementById('subConfirmBtn').style.display = 'none';
 }
 
-function payWithPayfast(tierKey, btn) {
-  console.log('[PAY] payWithPayfast called with tier:', tierKey);
-  if (btn) { btn.disabled = true; btn.textContent = 'Creating payment...'; }
-  apiPost('/api/pay/create', { tier: tierKey }).then(function(d) {
-    console.log('[PAY] API response:', JSON.stringify(d).slice(0, 200));
-    if (d.error) { alert(d.error); if (btn) { btn.disabled = false; btn.textContent = '💳 Pay with PayFast'; } return; }
-    if (d.formHtml) {
-      var div = document.createElement('div');
-      div.innerHTML = d.formHtml;
-      document.body.appendChild(div);
-    } else {
-      console.error('[PAY] No formHtml in response');
-      alert('Payment setup failed — no redirect form');
-      if (btn) { btn.disabled = false; btn.textContent = '💳 Pay with PayFast'; }
-    }
-  }).catch(function(e) {
-    console.error('[PAY] Error:', e);
-    alert('Payment error: ' + (e.message || 'Unknown'));
-    if (btn) { btn.disabled = false; btn.textContent = '💳 Pay with PayFast'; }
-  });
-}
 function closeSub() {
   var m = document.getElementById('subModal');
   if (m) { m.classList.remove('open'); m.style.display = 'none'; }

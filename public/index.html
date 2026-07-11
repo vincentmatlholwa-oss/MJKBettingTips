@@ -139,31 +139,56 @@
 <!-- SECTION: ADMIN -->
 <section id="section-admin" style="display:none;">
   <div class="tips-section">
-    <div class="tips-header"><div><div class="section-label">Admin Panel</div><div class="section-title">🔧 USER MANAGEMENT</div></div></div>
-    <div class="admin-panel" id="adminPanel">
-      <div style="margin-bottom:16px;">
-        <input type="text" id="adminTargetUser" placeholder="Username" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:#fff;font-size:13px;margin-right:8px;">
-        <select id="adminTargetTier" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:#fff;font-size:13px;margin-right:8px;">
+
+    <!-- STATS OVERVIEW -->
+    <div class="tips-header"><div><div class="section-label">Overview</div><div class="section-title">🔧 ADMIN DASHBOARD</div></div></div>
+    <div class="dashboard-grid" id="adminStats" style="margin-bottom:24px;">
+      <div class="dash-card"><div class="dash-label">Total Users</div><div class="dash-value" id="adminTotalUsers">-</div></div>
+      <div class="dash-card"><div class="dash-label">Win Rate</div><div class="dash-value" id="adminWinRate">-</div></div>
+      <div class="dash-card"><div class="dash-label">Total Tips</div><div class="dash-value" id="adminTotalTips">-</div></div>
+      <div class="dash-card"><div class="dash-label">Telegram Subs</div><div class="dash-value" id="adminTgSubs">-</div></div>
+      <div class="dash-card"><div class="dash-label">Free Users</div><div class="dash-value" id="adminFreeCount">-</div></div>
+      <div class="dash-card"><div class="dash-label">Pro Users</div><div class="dash-value" id="adminProCount">-</div></div>
+      <div class="dash-card"><div class="dash-label">Elite Users</div><div class="dash-value" id="adminEliteCount">-</div></div>
+      <div class="dash-card"><div class="dash-label">Pending Tips</div><div class="dash-value" id="adminPending">-</div></div>
+    </div>
+
+    <!-- USER MANAGEMENT -->
+    <div class="tips-header"><div><div class="section-label">Manage Users</div><div class="section-title">👥 USER MANAGEMENT</div></div></div>
+    <div class="admin-panel" style="margin-bottom:24px;">
+      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+        <input type="text" id="adminTargetUser" placeholder="Username" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:#fff;font-size:13px;flex:1;min-width:120px;">
+        <select id="adminTargetTier" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:#fff;font-size:13px;">
           <option value="free">Free</option>
-          <option value="starter">Starter</option>
-          <option value="pro">Pro</option>
-          <option value="elite">Elite</option>
+          <option value="starter">Starter (R700/wk)</option>
+          <option value="pro">Pro (R2,500/wk)</option>
+          <option value="elite">Elite (R6,570/mo)</option>
         </select>
-        <button class="btn btn-blue" style="width:auto;padding:8px 16px;" onclick="adminSetTier()">Set Tier</button>
+        <button class="btn btn-blue" style="width:auto;padding:8px 16px;" onclick="adminSetTier()">⬆ Set Tier</button>
+        <button class="btn" style="width:auto;padding:8px 16px;background:rgba(255,61,87,.15);border:1px solid rgba(255,61,87,.3);color:#ff3d57;" onclick="adminDeleteUser()">🗑 Delete</button>
       </div>
-      <div id="adminUserList"></div>
+      <div style="margin-bottom:12px;">
+        <input type="text" id="adminSearchUser" placeholder="Search users..." style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:#fff;font-size:13px;width:100%;" oninput="filterAdminUsers()">
+      </div>
+      <div id="adminUserList" style="max-height:400px;overflow-y:auto;"></div>
     </div>
-    <div class="tips-header" style="margin-top:24px;"><div><div class="section-title">📊 AI BACKTEST & ANALYSIS</div></div></div>
-    <div class="admin-panel">
-      <button class="btn btn-blue" style="width:auto;padding:8px 16px;margin-bottom:16px;" onclick="loadBacktest()">Run Backtest</button>
-      <div id="backtestPanel" style="font-size:12px;max-height:600px;overflow-y:auto;"></div>
+
+    <!-- QUICK ACTIONS -->
+    <div class="tips-header"><div><div class="section-label">Quick Actions</div><div class="section-title">⚡ ACTIONS</div></div></div>
+    <div class="admin-panel" style="margin-bottom:24px;">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;">
+        <button class="btn btn-blue" style="padding:12px;" onclick="sendBroadcast()">📱 Send WhatsApp Broadcast</button>
+        <button class="btn btn-blue" style="padding:12px;" onclick="getWhatsAppLink()">💬 Open WhatsApp Link</button>
+        <button class="btn btn-blue" style="padding:12px;" onclick="loadBacktest()">📊 Run AI Backtest</button>
+        <button class="btn btn-outline" style="padding:12px;" onclick="loadAdminStats()">🔄 Refresh Stats</button>
+      </div>
+      <div id="broadcastStatus" style="font-size:12px;color:var(--muted);margin-top:12px;"></div>
     </div>
-    <div class="tips-header" style="margin-top:24px;"><div><div class="section-title">📱 DAILY WHATSAPP BROADCAST</div></div></div>
+
+    <!-- AI BACKTEST -->
+    <div class="tips-header"><div><div class="section-label">AI Analysis</div><div class="section-title">📊 AI BACKTEST</div></div></div>
     <div class="admin-panel">
-      <p style="color:var(--muted);font-size:13px;margin-bottom:12px;">Send all today's tips to admin WhatsApp at 6am SAST daily. Or send now:</p>
-      <button class="btn btn-blue" style="width:auto;padding:8px 16px;margin-bottom:8px;" onclick="sendBroadcast()">Send Tips Now</button>
-      <button class="btn btn-outline" style="width:auto;padding:8px 16px;margin-bottom:12px;" onclick="getWhatsAppLink()">Open WhatsApp Link</button>
-      <div id="broadcastStatus" style="font-size:12px;color:var(--muted);"></div>
+      <div id="backtestPanel" style="font-size:12px;max-height:400px;overflow-y:auto;"></div>
     </div>
   </div>
 </section>
@@ -241,11 +266,9 @@
 <div class="modal-overlay" id="subModal" style="display:none;" onclick="if(event.target===this)closeSub()">
   <div class="modal auth-modal">
     <div class="modal-title" id="subTitle">Upgrade Plan</div>
-    <p style="color:var(--muted);font-size:13px;text-align:center;margin-bottom:16px;" id="subDesc">Choose your payment method to upgrade.</p>
-    <button class="btn btn-blue" id="subPayfastBtn" style="width:100%;margin-bottom:8px;display:none;">💳 Pay with PayFast</button>
-    <div style="text-align:center;margin-bottom:8px;color:var(--muted);font-size:11px;">or</div>
-    <a class="modal-wa" id="subWaLink" href="#" target="_blank">💬 Pay via WhatsApp</a>
-    <button class="btn btn-blue" id="subConfirmBtn" style="width:100%;margin-bottom:8px;display:none;">Subscribe</button>
+    <p style="color:var(--muted);font-size:13px;text-align:center;margin-bottom:16px;" id="subDesc">Contact us to activate your plan.</p>
+    <a class="modal-wa" id="subWaLink" href="#" target="_blank">💬 Chat on WhatsApp to Pay</a>
+    <p style="color:var(--muted);font-size:11px;text-align:center;margin-top:8px;">Payment via EFT / SnapScan / Zapper<br>Admin will activate your plan within 1 hour.</p>
     <button class="modal-close" onclick="closeSub()">Close</button>
   </div>
 </div>

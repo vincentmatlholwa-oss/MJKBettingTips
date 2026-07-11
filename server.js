@@ -22,12 +22,6 @@ const TELEGRAM_GROUP_ID = process.env.TELEGRAM_GROUP_ID || '';
 const WHATSAPP_INSTANCE_ID = process.env.WHATSAPP_INSTANCE_ID || '';
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN || '';
 const ADMIN_WHATSAPP = process.env.ADMIN_WHATSAPP || '+27677834591';
-const PAYFAST_MERCHANT_ID = process.env.PAYFAST_MERCHANT_ID || '';
-const PAYFAST_MERCHANT_KEY = process.env.PAYFAST_MERCHANT_KEY || '';
-const PAYFAST_PASSPHRASE = process.env.PAYFAST_PASSPHRASE || '';
-const PAYFAST_SANDBOX = process.env.PAYFAST_SANDBOX === 'true';
-const SITE_URL = process.env.SITE_URL || 'https://mjkbettingtips.onrender.com';
-const PAYFAST_URL = PAYFAST_SANDBOX ? 'https://sandbox.payfast.co.za/eng/process' : 'https://www.payfast.co.za/eng/process';
 
 const RESULTS_FILE = path.join(__dirname, 'data', 'tracked_results.json');
 const ELO_FILE = path.join(__dirname, 'data', 'elo_ratings.json');
@@ -1527,13 +1521,14 @@ function startPromoScheduler() {
     '✅ Free daily tips in this group\n\n' +
     '🔗 Upgrade to Pro for full access:\n' +
     'Visit <b>mjkbettingtips.com</b>\n\n' +
-    '💰 Pro from R250/mo | Elite from R6,570/mo',
+    '💰 Starter from R700/week | Pro from R2,500/week | Elite from R6,570/mo',
 
     '📊 <b>Daily Tip Highlights</b>\n\n' +
     'Get <b>AI-analyzed tips</b> with confidence ratings daily!\n\n' +
     '🔥 Free tier: 3 tips/day (this group)\n' +
-    '⚡ Pro tier: 25 tips + horse racing + ROI dashboard\n' +
-    '💎 Elite tier: 30 tips + early access + monthly reports\n\n' +
+    '⚡ Starter tier: 10 tips — R700/week\n' +
+    '⚡ Pro tier: 25 tips + horse racing — R2,500/week\n' +
+    '💎 Elite tier: 30 tips + early access — R6,570/month\n\n' +
     'Join now 👉 mjkbettingtips.com',
 
     '🏇 <b>Horse Racing Fans!</b>\n\n' +
@@ -1621,24 +1616,6 @@ app.get('/api/auth/me', authMiddleware, function(req, res) {
 });
 
 // Admin endpoints
-app.get('/api/admin/users', authMiddleware, adminMiddleware, function(req, res) {
-  var users = loadUsers();
-  var list = [];
-  for (var u in users) { list.push({ username: u, tier: users[u].tier, role: users[u].role, createdAt: users[u].createdAt }); }
-  res.json(list);
-});
-
-app.post('/api/admin/set-tier', authMiddleware, adminMiddleware, function(req, res) {
-  var users = loadUsers();
-  var target = (req.body.username || '').trim().toLowerCase();
-  var tier = req.body.tier;
-  if (!users[target]) return res.status(404).json({ error: 'User not found' });
-  if (!TIERS[tier]) return res.status(400).json({ error: 'Invalid tier. Options: free, starter, pro, elite' });
-  users[target].tier = tier;
-  saveUsers(users);
-  res.json({ success: true, username: target, tier: tier });
-});
-
 // Tips (with tier-based limits)
 app.get('/api/tips', function(req, res) {
   var tipCount = cachedTips.length;
@@ -2044,7 +2021,6 @@ app.post('/api/subscribe', authMiddleware, function(req, res) {
   if (TELEGRAM_BOT_TOKEN) {
     loadTelegramSubs().forEach(function(s) { sendTelegram(s.chatId, msg); });
   }
-  // Auto-upgrade for now — switch this when PayFast is added
   user.tier = tier;
   saveUsers(users);
   res.json({ success: true, tier: tier, message: 'Upgraded to ' + tier + '. Payment integration coming soon.' });
@@ -2179,139 +2155,80 @@ function scheduleDailyBroadcast() {
   }, delay);
 }
 
-// === PAYFAST PAYMENT GATEWAY ===
-var PAYFAST_SUBS_FILE = path.join(__dirname, 'data', 'payfast_subscriptions.json');
-function loadPayfastSubs() { return loadJSON(PAYFAST_SUBS_FILE, {}); }
-function savePayfastSubs(s) { saveJSON(PAYFAST_SUBS_FILE, s); }
-
-function generatePayFastSignature(params, passphrase) {
-  var str = '';
-  var keys = Object.keys(params);
-  for (var i = 0; i < keys.length; i++) {
-    if (params[keys[i]] !== '') str += keys[i] + '=' + encodeURIComponent(params[keys[i]]).replace(/%20/g, '+') + '&';
-  }
-  str = str.slice(0, -1);
-  if (passphrase) str += '&passphrase=' + encodeURIComponent(passphrase);
-  return crypto.createHash('md5').update(str).digest('hex');
-}
-
-// PayFast subscription prices (ZAR)
-var PF_PRICES = { starter: 700, pro: 2500, elite: 6570 };
-var PF_NAMES = { starter: 'MJK Starter Plan', pro: 'MJK Pro Plan', elite: 'MJK Elite Plan' };
-
-app.post('/api/pay/create', authMiddleware, async function(req, res) {
-  if (!PAYFAST_MERCHANT_ID || !PAYFAST_MERCHANT_KEY) return res.status(500).json({ error: 'PayFast not configured' });
-  var tier = req.body.tier;
-  if (!PF_PRICES[tier]) return res.status(400).json({ error: 'Invalid tier' });
-  var username = req.user.username;
-  var amount = PF_PRICES[tier];
-
-  var params = {
-    'merchant_id': PAYFAST_MERCHANT_ID,
-    'merchant_key': PAYFAST_MERCHANT_KEY,
-    'return_url': SITE_URL + '/?payment=success&tier=' + tier,
-    'cancel_url': SITE_URL + '/?payment=cancelled',
-    'notify_url': SITE_URL + '/api/pay/itn',
-    'name_first': username,
-    'email_address': username + '@mjk.local',
-    'm_payment_id': username + '-' + tier + '-' + Date.now(),
-    'amount': amount.toFixed(2),
-    'item_name': PF_NAMES[tier],
-    'item_description': 'MJK Betting Tips - ' + tier.charAt(0).toUpperCase() + tier.slice(1) + ' Plan (monthly)',
-    'subscription_type': '1',
-    'frequency': '3',
-    'recurring_amount': amount.toFixed(2),
-    'cycles': '0'
-  };
-
-  if (PAYFAST_PASSPHRASE) params.passphrase = PAYFAST_PASSPHRASE;
-  params.signature = generatePayFastSignature(params, PAYFAST_PASSPHRASE);
-
-  // Store pending payment
-  var subs = loadPayfastSubs();
-  subs[params.m_payment_id] = { username: username, tier: tier, amount: amount, status: 'pending', createdAt: new Date().toISOString() };
-  savePayfastSubs(subs);
-
-  var formHtml = '<form method="post" action="' + PAYFAST_URL + '" id="pfForm">';
-  for (var key in params) {
-    formHtml += '<input type="hidden" name="' + key + '" value="' + String(params[key]).replace(/"/g, '&quot;') + '">';
-  }
-  formHtml += '</form><script>document.getElementById("pfForm").submit();</script>';
-
-  res.json({ redirect: true, formHtml: formHtml, paymentUrl: PAYFAST_URL, params: params });
+// === ADMIN: USER MANAGEMENT ===
+app.get('/api/admin/users', authMiddleware, adminMiddleware, function(req, res) {
+  var users = loadUsers();
+  var list = Object.keys(users).map(function(k) {
+    return { username: k, tier: users[k].tier, role: users[k].role, createdAt: users[k].createdAt, subscribedAt: users[k].subscribedAt || null };
+  });
+  res.json({ users: list, total: list.length });
 });
 
-// PayFast ITN (Instant Transaction Notification) endpoint
-app.post('/api/pay/itn', express.urlencoded({ extended: true }), async function(req, res) {
-  try {
-    var data = req.body;
-    console.log('[PAYFAST] ITN received:', data.m_payment_id, data.payment_status);
-
-    // Verify signature
-    var verifyParams = {};
-    var keys = Object.keys(data);
-    for (var i = 0; i < keys.length; i++) {
-      if (keys[i] !== 'signature' && data[keys[i]] !== '') verifyParams[keys[i]] = data[keys[i]];
-    }
-    var expectedSig = generatePayFastSignature(verifyParams, PAYFAST_PASSPHRASE);
-
-    if (expectedSig !== data.signature) {
-      console.log('[PAYFAST] Invalid signature');
-      return res.send('Invalid signature');
-    }
-
-    // Verify with PayFast (optional extra security)
-    // For now, trust the ITN
-
-    var paymentId = data.m_payment_id;
-    var status = data.payment_status; // COMPLETE, FAILED, PENDING
-    var subs = loadPayfastSubs();
-
-    if (subs[paymentId]) {
-      subs[paymentId].status = status.toLowerCase();
-      subs[paymentId].itnAt = new Date().toISOString();
-      subs[paymentId].pfPaymentId = data.pf_payment_id;
-      savePayfastSubs(subs);
-
-      // If payment is COMPLETE, upgrade user
-      if (status === 'COMPLETE') {
-        var sub = subs[paymentId];
-        var users = loadUsers();
-        if (users[sub.username]) {
-          users[sub.username].tier = sub.tier;
-          users[sub.username].subscribedAt = new Date().toISOString();
-          users[sub.username].payfastPaymentId = paymentId;
-          saveUsers(users);
-          console.log('[PAYFAST] Upgraded ' + sub.username + ' to ' + sub.tier);
-        }
-      }
-    }
-
-    res.send('OK');
-  } catch (e) {
-    console.log('[PAYFAST] ITN error:', e.message);
-    res.send('OK'); // Always return OK to PayFast
-  }
+app.post('/api/admin/set-tier', authMiddleware, adminMiddleware, function(req, res) {
+  var targetUser = (req.body.username || '').trim().toLowerCase();
+  var newTier = req.body.tier;
+  if (!targetUser || !newTier || !TIERS[newTier]) return res.status(400).json({ error: 'Username and valid tier required (free, starter, pro, elite)' });
+  var users = loadUsers();
+  if (!users[targetUser]) return res.status(404).json({ error: 'User not found' });
+  var oldTier = users[targetUser].tier;
+  users[targetUser].tier = newTier;
+  users[targetUser].subscribedAt = new Date().toISOString();
+  users[targetUser].subscribedBy = req.user.username;
+  saveUsers(users);
+  console.log('[ADMIN] ' + req.user.username + ' changed ' + targetUser + ' from ' + oldTier + ' to ' + newTier);
+  res.json({ success: true, username: targetUser, oldTier: oldTier, newTier: newTier });
 });
 
-// Check payment status
-app.get('/api/pay/status/:paymentId', authMiddleware, function(req, res) {
-  var subs = loadPayfastSubs();
-  var sub = subs[req.params.paymentId];
-  if (!sub || sub.username !== req.user.username) return res.status(404).json({ error: 'Not found' });
-  res.json({ status: sub.status, tier: sub.tier, amount: sub.amount });
+app.post('/api/admin/delete-user', authMiddleware, adminMiddleware, function(req, res) {
+  var targetUser = (req.body.username || '').trim().toLowerCase();
+  if (!targetUser) return res.status(400).json({ error: 'Username required' });
+  var users = loadUsers();
+  if (!users[targetUser]) return res.status(404).json({ error: 'User not found' });
+  if (users[targetUser].role === 'admin') return res.status(403).json({ error: 'Cannot delete admin' });
+  delete users[targetUser];
+  saveUsers(users);
+  console.log('[ADMIN] ' + req.user.username + ' deleted user ' + targetUser);
+  res.json({ success: true, username: targetUser });
 });
 
-// === ADMIN PAYFAST ===
-app.post('/api/admin/payfast-config', authMiddleware, adminMiddleware, function(req, res) {
-  var config = {
-    merchantId: PAYFAST_MERCHANT_ID,
-    merchantKey: PAYFAST_MERCHANT_KEY,
-    passphrase: PAYFAST_PASSPHRASE ? '***set***' : '',
-    sandbox: PAYFAST_SANDBOX,
-    url: PAYFAST_URL
-  };
-  res.json(config);
+app.get('/api/admin/stats', authMiddleware, adminMiddleware, function(req, res) {
+  var users = loadUsers();
+  var allUsers = Object.keys(users);
+  var tiers = { free: 0, starter: 0, pro: 0, elite: 0 };
+  allUsers.forEach(function(k) { var t = users[k].tier || 'free'; tiers[t] = (tiers[t] || 0) + 1; });
+  loadTrackedTips();
+  var completed = trackedTips.filter(function(t) { return t.result === 'won' || t.result === 'lost'; });
+  var won = completed.filter(function(t) { return t.result === 'won'; }).length;
+  var pending = trackedTips.filter(function(t) { return t.result === 'pending'; }).length;
+  var subs = loadTelegramSubs();
+  res.json({
+    totalUsers: allUsers.length,
+    tiers: tiers,
+    totalTips: trackedTips.length,
+    completedTips: completed.length,
+    wonTips: won,
+    lostTips: completed.length - won,
+    winRate: completed.length > 0 ? (won / completed.length * 100).toFixed(1) : '0.0',
+    pendingTips: pending,
+    telegramSubs: subs.length,
+    cachedTips: cachedTips.length
+  });
+});
+
+app.get('/api/admin/user/:username', authMiddleware, adminMiddleware, function(req, res) {
+  var users = loadUsers();
+  var user = users[req.params.username];
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  loadTrackedTips();
+  var userTips = trackedTips.filter(function(t) { return t.result === 'won' || t.result === 'lost'; });
+  res.json({
+    username: req.params.username,
+    tier: user.tier,
+    role: user.role,
+    createdAt: user.createdAt,
+    subscribedAt: user.subscribedAt || null,
+    subscribedBy: user.subscribedBy || null
+  });
 });
 
 app.post('/api/admin/broadcast', authMiddleware, adminMiddleware, function(req, res) {
@@ -2342,8 +2259,10 @@ setInterval(checkResults, 300000);
 setInterval(function() { loadFeatureLogs(); for (var si = 0; si < SPORTS.length; si++) trainSportModel(SPORTS[si].key); }, 1800000);
 setInterval(function() { loadTrackedTips(); checkSportHealth(); }, 1800000);
 
+app.get('/health', function(req, res) { res.json({ status: 'ok', uptime: process.uptime() }); });
+
 app.listen(port, function() {
-  console.log('MJK Betting Tips v9 (Advanced AI + Telegram + WhatsApp Daily Broadcast) running on http://localhost:' + port);
+  console.log('MJK Betting Tips v10 (Advanced AI + Smart TG Group + WhatsApp Broadcast) running on http://localhost:' + port);
   if (TELEGRAM_BOT_TOKEN) console.log('[TELEGRAM] Bot enabled (long-polling mode)');
   if (WHATSAPP_INSTANCE_ID) console.log('[WHATSAPP] UltraMsg enabled — daily broadcast to ' + ADMIN_WHATSAPP);
   else console.log('[WHATSAPP] UltraMsg not configured — add WHATSAPP_INSTANCE_ID + WHATSAPP_TOKEN to .env');
