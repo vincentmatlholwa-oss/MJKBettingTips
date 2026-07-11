@@ -42,6 +42,8 @@ const FEATURE_LOG_FILE = path.join(__dirname, 'data', 'feature_log.json');
 const SPORT_HEALTH_FILE = path.join(__dirname, 'data', 'sport_health.json');
 const CACHED_ODDS_FILE = path.join(__dirname, 'data', 'cached_odds.json');
 const RACING_EVENTS_FILE = path.join(__dirname, 'data', 'racing_events.json');
+const TG_WARNINGS_FILE = path.join(__dirname, 'data', 'tg_warnings.json');
+const TG_LAST_PROMO_FILE = path.join(__dirname, 'data', 'tg_last_promo.json');
 
 const HORSE_RACING_API_KEY = process.env.HORSE_RACING_API_KEY || ''; // Reserved for future paid API
 const HORSE_RACING_API_BASE = 'https://api.odds-api.net/v1';
@@ -1081,15 +1083,67 @@ function buildHorseRacingTip(event) {
 var tgOffset = 0;
 var tgPolling = false;
 
-async function sendTelegram(chatId, message) {
+async function sendTelegram(chatId, message, extra) {
   if (!TELEGRAM_BOT_TOKEN) return;
   try {
+    var body = { chat_id: chatId, text: message, parse_mode: 'HTML', disable_web_page_preview: true };
+    if (extra) Object.assign(body, extra);
     await fetch('https://api.telegram.org/bot' + TELEGRAM_BOT_TOKEN + '/sendMessage', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text: message, parse_mode: 'HTML', disable_web_page_preview: true })
+      body: JSON.stringify(body)
     });
   } catch (e) {}
+}
+
+async function deleteTelegramMessage(chatId, messageId) {
+  if (!TELEGRAM_BOT_TOKEN) return;
+  try {
+    await fetch('https://api.telegram.org/bot' + TELEGRAM_BOT_TOKEN + '/deleteMessage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, message_id: messageId })
+    });
+  } catch (e) {}
+}
+
+function loadTgWarnings() { return loadJSON(TG_WARNINGS_FILE, {}); }
+function saveTgWarnings(w) { saveJSON(TG_WARNINGS_FILE, w); }
+
+function detectLanguage(text) {
+  var latinChars = text.replace(/[^a-zA-Z]/g, '').length;
+  var totalChars = text.replace(/\s/g, '').length;
+  if (totalChars === 0) return 'en';
+  return (latinChars / totalChars) > 0.85 ? 'en' : 'other';
+}
+
+async function translateToEnglish(text) {
+  try {
+    var encoded = encodeURIComponent(text);
+    var r = await fetch('https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=en&dt=t&q=' + encoded, { timeout: 5000 });
+    var d = await r.json();
+    if (d && d[0]) {
+      return d[0].map(function(s) { return s[0]; }).join('');
+    }
+  } catch (e) {}
+  return text;
+}
+
+function isGroupAdmin(msg) {
+  return msg && msg.from && (
+    msg.from.is_bot === false &&
+    msg.chat && msg.chat.all_administrators &&
+    msg.chat.all_administrators.some(function(a) { return a.user.id === msg.from.id; })
+  ) || (msg && msg.from && msg.from.id === msg.chat.owner);
+}
+
+function isLink(text) {
+  return /https?:\/\/|www\.|t\.me|bit\.ly|tinyurl\.com|wa\.me|chat\.whatsapp\.com|discord\.gg|telegram\.me/i.test(text);
+}
+
+function isSpam(text) {
+  var lower = text.toLowerCase();
+  return /buy now|free money|click here|join now|dm me|whatsapp.*group|bet.*guaranteed|100%.*win|double your|cash out/i.test(lower);
 }
 
 function formatTip(t, idx) {
@@ -1105,21 +1159,122 @@ function upcomingTips(tips, limit) {
   return tips.filter(function(t) { return t.kickoff && new Date(t.kickoff).getTime() > now; }).slice(0, limit || 10);
 }
 
-async function handleTelegramMessage(msg) {
+async function handleTelegramUpdate(update) {
+  if (!TELEGRAM_BOT_TOKEN) return;
+
+  // Handle new chat members (welcome)
+  if (update.message && update.message.new_chat_members) {
+    var chatId = update.message.chat.id;
+    if (chatId < 0) {
+      var members = update.message.new_chat_members;
+      for (var m = 0; m < members.length; m++) {
+        var user = members[m];
+        if (user.is_bot) continue;
+        var name = user.first_name || user.username || 'there';
+        await sendTelegram(chatId,
+          '👋 Welcome <b>' + name + '</b> to MJK Betting Tips!\n\n' +
+          '🏆 South Africa\'s most trusted betting community\n\n' +
+          'Get started:\n' +
+          '• /tips — Today\'s free tips\n' +
+          '• /bankers — Highest confidence picks\n' +
+          '• /help — All commands\n\n' +
+          '📊 We use AI-powered analysis across soccer, tennis, cricket, horse racing & more.\n\n' +
+          '🔗 <b>Upgrade for full access:</b>\n' +
+          'Visit mjkbettingtips.com for Pro & Elite plans!'
+        );
+      }
+    }
+    return;
+  }
+
+  // Handle left chat member (goodbye)
+  if (update.message && update.message.left_chat_member) {
+    var leftUser = update.message.left_chat_member;
+    if (!leftUser.is_bot && update.message.chat.id < 0) {
+      console.log('[TELEGRAM] User left: ' + (leftUser.first_name || leftUser.username || leftUser.id));
+    }
+    return;
+  }
+
+  var msg = update.message;
   if (!msg || !msg.text) return;
   var chatId = msg.chat.id;
-  var text = msg.text.trim().toLowerCase();
+  var text = msg.text.trim();
+  var textLower = text.toLowerCase();
   var subs = loadTelegramSubs();
   var isSub = subs.some(function(s) { return s.chatId === chatId; });
+  var isGroup = chatId < 0;
 
   // Auto-detect group chat ID
-  if (chatId < 0 && TELEGRAM_GROUP_ID === '' && msg.chat && msg.chat.title) {
+  if (isGroup && TELEGRAM_GROUP_ID === '' && msg.chat && msg.chat.title) {
     process.env.TELEGRAM_GROUP_ID = String(chatId);
     console.log('[TELEGRAM] Auto-detected group: "' + msg.chat.title + '" ID: ' + chatId + ' — add TELEGRAM_GROUP_ID=' + chatId + ' to .env');
   }
 
+  // === GROUP MODE: Enforce rules ===
+  if (isGroup) {
+    var userId = msg.from.id;
+    var isAdmin = msg.from.username === 'admin' || msg.from.username === 'mjkbettingtips';
+
+    // Skip enforcement for admins
+    if (!isAdmin) {
+
+      // 1. BLOCK LINKS
+      if (isLink(text)) {
+        await deleteTelegramMessage(chatId, msg.message_id);
+        var warnings = loadTgWarnings();
+        var key = String(chatId) + ':' + String(userId);
+        if (!warnings[key]) warnings[key] = { count: 0, firstName: msg.from.first_name || '', history: [] };
+        warnings[key].count++;
+        warnings[key].history.push({ reason: 'link', time: new Date().toISOString(), text: text.slice(0, 100) });
+        // Keep only last 10 history entries
+        if (warnings[key].history.length > 10) warnings[key].history = warnings[key].history.slice(-10);
+        saveTgWarnings(warnings);
+        var warnCount = warnings[key].count;
+        var uname = msg.from.first_name || 'User';
+        if (warnCount >= 3) {
+          await sendTelegram(chatId,
+            '🚫 <b>' + uname + '</b> has been warned ' + warnCount + ' times for posting links.\n\n' +
+            '⚠️ Further violations may result in a mute.\n\n' +
+            '📢 <i>Links are not allowed in this group to keep it safe for everyone.</i>'
+          );
+        } else {
+          await sendTelegram(chatId,
+            '⚠️ <b>' + uname + '</b>, links are not allowed here!\n' +
+            'Warning ' + warnCount + '/3. ' + (3 - warnCount) + ' more and you\'ll be flagged.'
+          );
+        }
+        console.log('[TELEGRAM] Deleted link from ' + uname + ' (warn ' + warnCount + '/3)');
+        return;
+      }
+
+      // 2. BLOCK SPAM
+      if (isSpam(text)) {
+        await deleteTelegramMessage(chatId, msg.message_id);
+        await sendTelegram(chatId, '🚫 Spam message removed. Please keep the chat clean.');
+        console.log('[TELEGRAM] Deleted spam from ' + (msg.from.first_name || 'unknown'));
+        return;
+      }
+
+      // 3. TRANSLATE NON-ENGLISH MESSAGES
+      if (text.length > 5 && detectLanguage(text) !== 'en') {
+        var translated = await translateToEnglish(text);
+        if (translated && translated !== text) {
+          await sendTelegram(chatId,
+            '🌐 <b>' + (msg.from.first_name || 'User') + '</b> (translated from another language):\n\n' +
+            '<i>"' + translated + '"</i>',
+            { reply_to_message_id: msg.message_id }
+          );
+          console.log('[TELEGRAM] Translated message from ' + (msg.from.first_name || 'unknown'));
+        }
+      }
+    }
+  }
+
+  // === COMMAND HANDLING ===
+
   // /start
-  if (text === '/start' || text === '/start@mjk_bettingtips_bot') {
+  if (textLower === '/start' || textLower === '/start@mjk_bettingtips_bot') {
     if (!isSub) { subs.push({ chatId: chatId, username: msg.from.username || '', firstName: msg.from.first_name || '', subscribedAt: new Date().toISOString() }); saveTelegramSubs(subs); }
     await sendTelegram(chatId,
       'Welcome to MJK Betting Tips!\n\n' +
@@ -1137,14 +1292,14 @@ async function handleTelegramMessage(msg) {
   }
 
   // /stop
-  if (text === '/stop' || text === '/stop@mjk_bettingtips_bot') {
+  if (textLower === '/stop' || textLower === '/stop@mjk_bettingtips_bot') {
     saveTelegramSubs(subs.filter(function(s) { return s.chatId !== chatId; }));
     await sendTelegram(chatId, 'Unsubscribed. Send /start to re-subscribe.');
     return;
   }
 
   // /help
-  if (text === '/help' || text === '/help@mjk_bettingtips_bot') {
+  if (textLower === '/help' || textLower === '/help@mjk_bettingtips_bot') {
     await sendTelegram(chatId,
       'MJK Betting Tips — Commands\n\n' +
       '/tips — Today\'s top 10 tips\n' +
@@ -1160,52 +1315,49 @@ async function handleTelegramMessage(msg) {
   }
 
   // /tips
-  if (text === '/tips' || text === '/tips@mjk_bettingtips_bot' || text === 'tips' || text === "today's tips" || text === 'today') {
-    var isGroup = chatId < 0;
+  if (textLower === '/tips' || textLower === '/tips@mjk_bettingtips_bot' || textLower === 'tips' || textLower === "today's tips" || textLower === 'today') {
     var tips = upcomingTips(cachedTips, isGroup ? TIERS.free.tipLimit : 10);
     if (isGroup) tips = tips.filter(function(t) { return t.type !== 'horse_racing'; });
     if (tips.length === 0) { await sendTelegram(chatId, 'No upcoming tips right now. Check back later!'); return; }
-    var msg = '<b>MJK Tips — ' + (isGroup ? 'Free ' + tips.length : 'Top ' + tips.length) + '</b>\n\n';
-    tips.forEach(function(t, i) { msg += formatTip(t, i + 1) + '\n\n'; });
-    if (!isGroup) msg += 'Confidence min 70% | AI-powered predictions';
-    else msg += 'Upgrade to Pro/Elite for full access';
-    await sendTelegram(chatId, msg);
+    var reply = '<b>MJK Tips — ' + (isGroup ? 'Free ' + tips.length : 'Top ' + tips.length) + '</b>\n\n';
+    tips.forEach(function(t, i) { reply += formatTip(t, i + 1) + '\n\n'; });
+    if (!isGroup) reply += 'Confidence min 70% | AI-powered predictions';
+    else reply += 'Upgrade to Pro/Elite for full access';
+    await sendTelegram(chatId, reply);
     return;
   }
 
   // /bankers
-  if (text === '/bankers' || text === '/bankers@mjk_bettingtips_bot' || text === 'bankers') {
-    var isGroup = chatId < 0;
+  if (textLower === '/bankers' || textLower === '/bankers@mjk_bettingtips_bot' || textLower === 'bankers') {
     var bankers = upcomingTips(cachedTips.filter(function(t) { return t.conf >= 80 && (isGroup ? t.type !== 'horse_racing' : true); }), isGroup ? 3 : 10);
     if (bankers.length === 0) { await sendTelegram(chatId, 'No bankers (80%+) available right now.'); return; }
-    var msg = '<b>MJK Bankers — Highest Confidence</b>\n\n';
-    bankers.forEach(function(t, i) { msg += formatTip(t, i + 1) + '\n\n'; });
-    msg += 'Bankers = 80%+ confidence';
-    await sendTelegram(chatId, msg);
+    var reply = '<b>MJK Bankers — Highest Confidence</b>\n\n';
+    bankers.forEach(function(t, i) { reply += formatTip(t, i + 1) + '\n\n'; });
+    reply += 'Bankers = 80%+ confidence';
+    await sendTelegram(chatId, reply);
     return;
   }
 
   // /all
-  if (text === '/all' || text === '/all@mjk_bettingtips_bot' || text === 'all tips') {
-    var isGroup = chatId < 0;
+  if (textLower === '/all' || textLower === '/all@mjk_bettingtips_bot' || textLower === 'all tips') {
     var tips = upcomingTips(cachedTips, isGroup ? TIERS.free.tipLimit : 50);
     if (isGroup) tips = tips.filter(function(t) { return t.type !== 'horse_racing'; });
     if (tips.length === 0) { await sendTelegram(chatId, 'No upcoming tips right now.'); return; }
     var bySport = {};
     tips.forEach(function(t) { if (!bySport[t.sport]) bySport[t.sport] = []; bySport[t.sport].push(t); });
-    var msg = '<b>MJK ' + (isGroup ? 'Free ' : '') + 'Tips (' + tips.length + ')</b>\n\n';
+    var reply = '<b>MJK ' + (isGroup ? 'Free ' : '') + 'Tips (' + tips.length + ')</b>\n\n';
     for (var sport in bySport) {
-      msg += '<b>' + bySport[sport][0].icon + ' ' + sport + '</b>\n';
-      bySport[sport].forEach(function(t, i) { msg += formatTip(t, i + 1) + '\n'; });
-      msg += '\n';
+      reply += '<b>' + bySport[sport][0].icon + ' ' + sport + '</b>\n';
+      bySport[sport].forEach(function(t, i) { reply += formatTip(t, i + 1) + '\n'; });
+      reply += '\n';
     }
-    if (isGroup) msg += 'Upgrade for full access — mjkbettingtips.com';
-    await sendTelegram(chatId, msg);
+    if (isGroup) reply += 'Upgrade for full access — mjkbettingtips.com';
+    await sendTelegram(chatId, reply);
     return;
   }
 
   // /sport <name>
-  if (text.startsWith('/sport') || text.startsWith('/sport@mjk_bettingtips_bot')) {
+  if (textLower.startsWith('/sport') || textLower.startsWith('/sport@mjk_bettingtips_bot')) {
     var parts = msg.text.trim().split(/\s+/);
     var query = (parts[1] || '').toLowerCase().replace(/@mjk_bettingtips_bot/gi, '');
     if (!query) { await sendTelegram(chatId, 'Usage: /sport <name>\nExample: /sport soccer\n\nSports: soccer, tennis, nfl, nrl, mlb, afl, cricket'); return; }
@@ -1222,14 +1374,14 @@ async function handleTelegramMessage(msg) {
     var matchKey = sportMap[query] || query;
     var tips = upcomingTips(cachedTips.filter(function(t) { return t.type.toLowerCase().indexOf(matchKey) >= 0 || t.sport.toLowerCase().indexOf(query) >= 0; }), 15);
     if (tips.length === 0) { await sendTelegram(chatId, 'No upcoming tips found for "' + query + '".'); return; }
-    var msg = '<b>MJK Tips — ' + tips[0].sport + '</b>\n\n';
-    tips.forEach(function(t, i) { msg += formatTip(t, i + 1) + '\n\n'; });
-    await sendTelegram(chatId, msg);
+    var reply = '<b>MJK Tips — ' + tips[0].sport + '</b>\n\n';
+    tips.forEach(function(t, i) { reply += formatTip(t, i + 1) + '\n\n'; });
+    await sendTelegram(chatId, reply);
     return;
   }
 
   // /stats
-  if (text === '/stats' || text === '/stats@mjk_bettingtips_bot' || text === 'stats' || text === 'performance') {
+  if (textLower === '/stats' || textLower === '/stats@mjk_bettingtips_bot' || textLower === 'stats' || textLower === 'performance') {
     loadTrackedTips();
     var completed = trackedTips.filter(function(t) { return t.result === 'won' || t.result === 'lost'; });
     var won = completed.filter(function(t) { return t.result === 'won'; }).length;
@@ -1249,16 +1401,16 @@ async function handleTelegramMessage(msg) {
   }
 
   // /results
-  if (text === '/results' || text === '/results@mjk_bettingtips_bot' || text === 'results') {
+  if (textLower === '/results' || textLower === '/results@mjk_bettingtips_bot' || textLower === 'results') {
     loadTrackedTips();
     var recent = trackedTips.filter(function(t) { return t.result === 'won' || t.result === 'lost'; }).sort(function(a, b) { return (b.checkedAt || '').localeCompare(a.checkedAt || ''); }).slice(0, 10);
     if (recent.length === 0) { await sendTelegram(chatId, 'No completed results yet.'); return; }
-    var msg = '<b>MJK Recent Results</b>\n\n';
+    var reply = '<b>MJK Recent Results</b>\n\n';
     recent.forEach(function(t) {
       var icon = t.result === 'won' ? '✅' : '❌';
-      msg += icon + ' ' + t.match + '\n   ' + t.pick + ' @ ' + t.odds + ' (' + t.conf + '%)\n\n';
+      reply += icon + ' ' + t.match + '\n   ' + t.pick + ' @ ' + t.odds + ' (' + t.conf + '%)\n\n';
     });
-    await sendTelegram(chatId, msg);
+    await sendTelegram(chatId, reply);
     return;
   }
 }
@@ -1274,7 +1426,7 @@ async function tgPollOnce() {
         for (var i = 0; i < data.result.length; i++) {
           var update = data.result[i];
           tgOffset = update.update_id + 1;
-          await handleTelegramMessage(update.message);
+          await handleTelegramUpdate(update);
         }
       }
     }
@@ -1284,14 +1436,77 @@ async function tgPollOnce() {
   tgPolling = false;
 }
 
+// === AUTO-PROMO: Send promotional message every 4 hours ===
+function startPromoScheduler() {
+  var promoMessages = [
+    '🏆 <b>Why MJK Betting Tips?</b>\n\n' +
+    '✅ AI-powered predictions across 10+ sports\n' +
+    '✅ 70%+ win rate on tracked tips\n' +
+    '✅ Horse racing, soccer, tennis, cricket & more\n' +
+    '✅ Free daily tips in this group\n\n' +
+    '🔗 Upgrade to Pro for full access:\n' +
+    'Visit <b>mjkbettingtips.com</b>\n\n' +
+    '💰 Pro from R250/mo | Elite from R6,570/mo',
+
+    '📊 <b>Daily Tip Highlights</b>\n\n' +
+    'Get <b>AI-analyzed tips</b> with confidence ratings daily!\n\n' +
+    '🔥 Free tier: 3 tips/day (this group)\n' +
+    '⚡ Pro tier: 25 tips + horse racing + ROI dashboard\n' +
+    '💎 Elite tier: 30 tips + early access + monthly reports\n\n' +
+    'Join now 👉 mjkbettingtips.com',
+
+    '🏇 <b>Horse Racing Fans!</b>\n\n' +
+    'We cover horse racing with AI-powered predictions!\n' +
+    'Best odds from top South African bookmakers.\n\n' +
+    'Horse racing tips are available on <b>Pro & Elite</b> plans.\n\n' +
+    '👉 mjkbettingtips.com',
+
+    '⚽ <b>Weekend Ready?</b>\n\n' +
+    'MJK Betting Tips has you covered for:\n' +
+    '⚽ EPL & international soccer\n' +
+    '🏏 Cricket T20s\n' +
+    '🎾 Tennis Grand Slams\n' +
+    '🏇 Horse Racing\n\n' +
+    'Free tips posted daily — upgrade for full access!\n' +
+    'mjkbettingtips.com'
+  ];
+
+  async function sendPromo() {
+    var groupId = TELEGRAM_GROUP_ID;
+    if (!groupId || !TELEGRAM_BOT_TOKEN) return;
+    try {
+      var lastPromo = {};
+      try { lastPromo = JSON.parse(fs.readFileSync(TG_LAST_PROMO_FILE, 'utf8')); } catch (e) {}
+      var now = Date.now();
+      var lastTime = lastPromo.time || 0;
+      // Only send if 4+ hours since last promo
+      if (now - lastTime < 4 * 60 * 60 * 1000) return;
+
+      var idx = (lastPromo.index || 0) % promoMessages.length;
+      await sendTelegram(groupId, promoMessages[idx]);
+      saveJSON(TG_LAST_PROMO_FILE, { time: now, index: idx + 1 });
+      console.log('[TELEGRAM] Sent promo #' + (idx + 1) + ' to group');
+    } catch (e) {
+      console.log('[TELEGRAM] Promo error:', e.message || e);
+    }
+  }
+
+  // Check every 30 minutes
+  setInterval(sendPromo, 30 * 60 * 1000);
+  // Also send one 5 minutes after startup (for first deploy)
+  setTimeout(sendPromo, 5 * 60 * 1000);
+}
+
 function startTelegramBot() {
   if (!TELEGRAM_BOT_TOKEN) { console.log('[TELEGRAM] No bot token — Telegram bot disabled'); return; }
   console.log('[TELEGRAM] Starting long-polling bot...');
+  console.log('[TELEGRAM] Smart features: link blocking, welcome, translation, promo');
   async function pollLoop() {
     await tgPollOnce();
     setTimeout(pollLoop, 1000);
   }
   pollLoop();
+  startPromoScheduler();
 }
 
 // === API ROUTES ===

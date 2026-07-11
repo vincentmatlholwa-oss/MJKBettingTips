@@ -1,1 +1,10 @@
-{}
+{
+  "spain": {
+    "team": "Spain",
+    "lastMatch": "2026-07-10T19:00:00Z"
+  },
+  "belgium": {
+    "team": "Belgium",
+    "lastMatch": "2026-07-10T19:00:00Z"
+  }
+}

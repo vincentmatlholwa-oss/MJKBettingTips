@@ -1,1 +1,82 @@
-{}
+{
+  "soccer_fifa_world_cup": {
+    "Belgium|Spain": {
+      "homeWins": 33,
+      "awayWins": 0,
+      "draws": 0,
+      "total": 33,
+      "lastResults": [
+        {
+          "home": "Spain",
+          "away": "Belgium",
+          "hg": 2,
+          "ag": 1,
+          "date": "2026-07-11T09:12:59.528Z"
+        },
+        {
+          "home": "Spain",
+          "away": "Belgium",
+          "hg": 2,
+          "ag": 1,
+          "date": "2026-07-11T09:13:24.258Z"
+        },
+        {
+          "home": "Spain",
+          "away": "Belgium",
+          "hg": 2,
+          "ag": 1,
+          "date": "2026-07-11T09:18:04.550Z"
+        },
+        {
+          "home": "Spain",
+          "away": "Belgium",
+          "hg": 2,
+          "ag": 1,
+          "date": "2026-07-11T09:18:58.650Z"
+        },
+        {
+          "home": "Spain",
+          "away": "Belgium",
+          "hg": 2,
+          "ag": 1,
+          "date": "2026-07-11T09:22:58.883Z"
+        },
+        {
+          "home": "Spain",
+          "away": "Belgium",
+          "hg": 2,
+          "ag": 1,
+          "date": "2026-07-11T09:23:20.705Z"
+        },
+        {
+          "home": "Spain",
+          "away": "Belgium",
+          "hg": 2,
+          "ag": 1,
+          "date": "2026-07-11T09:27:59.110Z"
+        },
+        {
+          "home": "Spain",
+          "away": "Belgium",
+          "hg": 2,
+          "ag": 1,
+          "date": "2026-07-11T09:28:18.360Z"
+        },
+        {
+          "home": "Spain",
+          "away": "Belgium",
+          "hg": 2,
+          "ag": 1,
+          "date": "2026-07-11T09:32:59.104Z"
+        },
+        {
+          "home": "Spain",
+          "away": "Belgium",
+          "hg": 2,
+          "ag": 1,
+          "date": "2026-07-11T09:33:18.874Z"
+        }
+      ]
+    }
+  }
+}
