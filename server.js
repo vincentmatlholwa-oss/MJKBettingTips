@@ -18,6 +18,10 @@ const FB_API_BASE = 'https://api.football-data.org/v4';
 const ODDS_API_KEY = process.env.ODDS_API_KEY || '';
 const ODDS_API_BASE = 'https://api.the-odds-api.com/v4';
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
+const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID || '';
+const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || '';
+const TWILIO_WHATSAPP_FROM = process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886';
+const ADMIN_WHATSAPP = process.env.ADMIN_WHATSAPP || 'whatsapp:+27677834591';
 
 const RESULTS_FILE = path.join(__dirname, 'data', 'tracked_results.json');
 const ELO_FILE = path.join(__dirname, 'data', 'elo_ratings.json');
@@ -1671,21 +1675,41 @@ function formatTipsForWhatsApp(tips) {
   return msg;
 }
 
+async function sendWhatsAppMessage(to, body) {
+  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) { console.log('[WHATSAPP] Twilio not configured — skipping'); return false; }
+  try {
+    var params = new URLSearchParams();
+    params.append('From', TWILIO_WHATSAPP_FROM);
+    params.append('To', to);
+    params.append('Body', body);
+    var res = await fetch('https://api.twilio.com/2010-04-01/Accounts/' + TWILIO_ACCOUNT_SID + '/Messages.json', {
+      method: 'POST',
+      headers: { 'Authorization': 'Basic ' + Buffer.from(TWILIO_ACCOUNT_SID + ':' + TWILIO_AUTH_TOKEN).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString()
+    });
+    var data = await res.json();
+    if (res.ok) { console.log('[WHATSAPP] Sent to ' + to + ' (sid: ' + data.sid + ')'); return true; }
+    else { console.log('[WHATSAPP] Failed: ' + (data.message || res.status)); return false; }
+  } catch (e) { console.log('[WHATSAPP] Error: ' + (e.message || e)); return false; }
+}
+
 async function sendDailyBroadcast() {
   if (!cachedTips || cachedTips.length === 0) { console.log('[BROADCAST] No tips to broadcast'); return; }
   var upcoming = cachedTips.filter(function(t) { return t.kickoff && new Date(t.kickoff).getTime() > Date.now(); });
   if (upcoming.length === 0) { console.log('[BROADCAST] No upcoming tips'); return; }
   var msg = formatTipsForWhatsApp(upcoming);
+  var plainMsg = msg.replace(/\*/g, '');
   console.log('[BROADCAST] Sending daily tips to admin (' + upcoming.length + ' tips)');
+  var waSent = await sendWhatsAppMessage(ADMIN_WHATSAPP, plainMsg);
+  if (!waSent) console.log('[BROADCAST] WhatsApp delivery failed — tips logged to data/last_broadcast.json');
   if (TELEGRAM_BOT_TOKEN) {
     var adminSubs = loadTelegramSubs();
     for (var i = 0; i < adminSubs.length; i++) {
-      await sendTelegram(adminSubs[i].chatId, msg.replace(/\*/g, ''));
+      await sendTelegram(adminSubs[i].chatId, plainMsg);
     }
   }
-  var waUrl = 'https://wa.me/' + ADMIN_PHONE + '?text=' + encodeURIComponent(msg.replace(/\*/g, ''));
-  console.log('[BROADCAST] WhatsApp link: ' + waUrl.slice(0, 100) + '...');
-  saveJSON(path.join(__dirname, 'data', 'last_broadcast.json'), { sentAt: new Date().toISOString(), tipCount: upcoming.length, message: msg, whatsappUrl: waUrl });
+  var waUrl = 'https://wa.me/' + ADMIN_PHONE + '?text=' + encodeURIComponent(plainMsg);
+  saveJSON(path.join(__dirname, 'data', 'last_broadcast.json'), { sentAt: new Date().toISOString(), tipCount: upcoming.length, whatsappDelivered: waSent, message: msg, whatsappUrl: waUrl });
 }
 
 function scheduleDailyBroadcast() {
@@ -1703,13 +1727,21 @@ function scheduleDailyBroadcast() {
 }
 
 app.post('/api/admin/broadcast', authMiddleware, adminMiddleware, function(req, res) {
-  sendDailyBroadcast().then(function() { res.json({ success: true, message: 'Daily broadcast sent to admin' }); }).catch(function(e) { res.status(500).json({ error: e.message }); });
+  sendDailyBroadcast().then(function() { res.json({ success: true, message: 'Daily broadcast sent to admin via WhatsApp + Telegram' }); }).catch(function(e) { res.status(500).json({ error: e.message }); });
+});
+
+app.post('/api/admin/send-now', authMiddleware, adminMiddleware, async function(req, res) {
+  if (!cachedTips || cachedTips.length === 0) return res.json({ error: 'No tips available' });
+  var upcoming = cachedTips.filter(function(t) { return t.kickoff && new Date(t.kickoff).getTime() > Date.now(); });
+  var msg = formatTipsForWhatsApp(upcoming).replace(/\*/g, '');
+  var waSent = await sendWhatsAppMessage(ADMIN_WHATSAPP, msg);
+  res.json({ whatsapp: waSent ? 'sent' : 'failed', tipCount: upcoming.length });
 });
 
 app.get('/api/admin/whatsapp-link', authMiddleware, adminMiddleware, function(req, res) {
   var upcoming = cachedTips.filter(function(t) { return t.kickoff && new Date(t.kickoff).getTime() > Date.now(); });
-  var msg = formatTipsForWhatsApp(upcoming);
-  var waUrl = 'https://wa.me/' + ADMIN_PHONE + '?text=' + encodeURIComponent(msg.replace(/\*/g, ''));
+  var msg = formatTipsForWhatsApp(upcoming).replace(/\*/g, '');
+  var waUrl = 'https://wa.me/' + ADMIN_PHONE + '?text=' + encodeURIComponent(msg);
   res.json({ url: waUrl, tipCount: upcoming.length });
 });
 
@@ -1723,8 +1755,10 @@ setInterval(function() { loadFeatureLogs(); for (var si = 0; si < SPORTS.length;
 setInterval(function() { loadTrackedTips(); checkSportHealth(); }, 1800000);
 
 app.listen(port, function() {
-  console.log('MJK Betting Tips v8 (Advanced AI + Telegram + Daily Broadcast) running on http://localhost:' + port);
+  console.log('MJK Betting Tips v9 (Advanced AI + Telegram + WhatsApp Daily Broadcast) running on http://localhost:' + port);
   if (TELEGRAM_BOT_TOKEN) console.log('[TELEGRAM] Bot enabled (long-polling mode)');
+  if (TWILIO_ACCOUNT_SID) console.log('[WHATSAPP] Twilio enabled — daily broadcast to ' + ADMIN_WHATSAPP);
+  else console.log('[WHATSAPP] Twilio not configured — add TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN to .env');
   console.log('[AUTH] Admin login: ' + ADMIN_USER + ' / ' + ADMIN_PASS);
   console.log('[AI] Dixon-Coles Poisson, logistic regression, per-sport config, team stats, H2H, fatigue tracking loaded');
   startTelegramBot();
