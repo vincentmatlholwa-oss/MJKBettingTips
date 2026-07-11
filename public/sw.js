@@ -1,4 +1,4 @@
-var CACHE_NAME = 'mjk-tips-v1';
+var CACHE_NAME = 'mjk-tips-v2';
 var PRECACHE_URLS = ['/', '/index.html', '/styles.css', '/app.js', '/logo.jpg', '/manifest.json'];
 
 self.addEventListener('install', function(e) {
@@ -12,7 +12,6 @@ self.addEventListener('activate', function(e) {
 });
 
 self.addEventListener('fetch', function(e) {
-  // Network-first for API, cache-first for assets
   if (e.request.url.indexOf('/api/') >= 0) {
     e.respondWith(fetch(e.request).catch(function() { return caches.match(e.request); }));
   } else {
@@ -26,6 +25,7 @@ self.addEventListener('fetch', function(e) {
   }
 });
 
+// Push from browser Push API
 self.addEventListener('push', function(e) {
   var data = e.data ? e.data.json() : { title: 'MJK Tips', body: 'New tips available!' };
   e.waitUntil(self.registration.showNotification(data.title, {
@@ -34,7 +34,7 @@ self.addEventListener('push', function(e) {
     badge: '/logo.jpg',
     vibrate: [200, 100, 200],
     tag: 'mjk-tip',
-    data: { url: '/' }
+    data: { url: data.url || '/' }
   }));
 });
 
@@ -42,3 +42,24 @@ self.addEventListener('notificationclick', function(e) {
   e.notification.close();
   e.waitUntil(clients.openWindow(e.notification.data ? e.notification.data.url : '/'));
 });
+
+// Poll server for pending notifications every 2 minutes
+var POLL_INTERVAL = 120000;
+function pollNotifications() {
+  fetch('/api/push/pending').then(function(r) { return r.json(); }).then(function(data) {
+    if (data.notifications && data.notifications.length > 0) {
+      data.notifications.forEach(function(n) {
+        self.registration.showNotification(n.title, {
+          body: n.body,
+          icon: '/logo.jpg',
+          badge: '/logo.jpg',
+          vibrate: [200, 100, 200],
+          tag: 'mjk-tip-' + n.timestamp,
+          data: { url: n.url || '/' }
+        });
+      });
+    }
+  }).catch(function() {});
+  setTimeout(pollNotifications, POLL_INTERVAL);
+}
+setTimeout(pollNotifications, POLL_INTERVAL);

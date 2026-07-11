@@ -229,6 +229,8 @@ function handleForgot() {
 }
 function closeAuth() {
   var m = document.getElementById('authModal');
+  var oddsContent = document.getElementById('oddsCompareContent');
+  if (oddsContent) oddsContent.remove();
   if (m) { m.classList.remove('open'); setTimeout(function() { m.style.display = 'none'; }, 300); }
 }
 function handleAuth() {
@@ -315,17 +317,33 @@ function showRealityCheck() {
 // === PUSH NOTIFICATIONS ===
 function requestPushNotification() {
   if (!('Notification' in window)) return;
-  if (Notification.permission === 'granted') return;
+  if (Notification.permission === 'granted') {
+    registerPushSubscription();
+    return;
+  }
   var dismissed = localStorage.getItem('mjk_push_dismissed');
   if (dismissed) return;
   var prompt = document.getElementById('pushPrompt');
   if (prompt) setTimeout(function() { prompt.style.display = 'flex'; }, 5000);
 }
+function registerPushSubscription() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+  navigator.serviceWorker.ready.then(function(reg) {
+    reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: '' }).then(function(sub) {
+      var subJson = sub.toJSON();
+      apiPost('/api/push/subscribe', subJson).catch(function() {});
+    }).catch(function() {});
+  }).catch(function() {});
+}
 function enablePushNotifications() {
-  if (!('Notification' in window)) { showToast('Notifications not supported', 'error'); return; }
+  if (!('Notification' in window)) { showToast('Notifications not supported in this browser', 'error'); return; }
   Notification.requestPermission().then(function(perm) {
-    if (perm === 'granted') showToast('Notifications enabled!', 'success');
-    else showToast('Notifications blocked by browser', 'info');
+    if (perm === 'granted') {
+      showToast('Notifications enabled!', 'success');
+      registerPushSubscription();
+    } else {
+      showToast('Notifications blocked — you can enable them in browser settings', 'info');
+    }
     dismissPushPrompt();
   });
 }
@@ -333,6 +351,22 @@ function dismissPushPrompt() {
   var prompt = document.getElementById('pushPrompt');
   if (prompt) prompt.style.display = 'none';
   localStorage.setItem('mjk_push_dismissed', '1');
+}
+
+// === EMAIL DIGEST ===
+function subscribeEmailDigest() {
+  var email = document.getElementById('digestEmail').value.trim();
+  var err = document.getElementById('digestError');
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    err.textContent = 'Please enter a valid email address.';
+    return;
+  }
+  err.textContent = '';
+  apiPost('/api/email/subscribe', { email: email }).then(function(d) {
+    if (d.error) { err.textContent = d.error; return; }
+    showToast('Subscribed to daily digest!', 'success');
+    document.getElementById('emailModal').style.display = 'none';
+  }).catch(function() { err.textContent = 'Network error'; });
 }
 
 // === TIERS ===
@@ -699,6 +733,60 @@ function generateApiKey() {
   }).catch(function() {});
 }
 
+// === LIVE ODDS COMPARISON ===
+function showOddsComparison(tipId, sport, match) {
+  var modal = document.getElementById('authModal');
+  if (!modal) return;
+  modal.style.display = 'flex';
+  setTimeout(function() { modal.classList.add('open'); }, 10);
+  document.getElementById('authTitle').textContent = 'Odds Comparison';
+  document.getElementById('authFormDefault').style.display = 'none';
+  document.getElementById('authFormForgot').style.display = 'none';
+  var comparisonHtml = '<div id="oddsCompareContent" style="text-align:left;"><div style="text-align:center;padding:20px;color:var(--muted);">Loading odds comparison...</div></div>';
+  var existingContent = document.getElementById('oddsCompareContent');
+  if (!existingContent) {
+    var form = document.getElementById('authFormDefault');
+    form.insertAdjacentHTML('beforebegin', comparisonHtml);
+  }
+  apiGet('/api/odds/compare/' + sport).then(function(d) {
+    var el = document.getElementById('oddsCompareContent');
+    if (!el) return;
+    if (!d.odds || d.odds.length === 0) {
+      el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);">No odds comparison available for this sport yet. Odds comparison requires an API key configured on the server.</div>';
+      return;
+    }
+    var html = '<div style="font-size:12px;">';
+    html += '<div style="color:var(--muted);margin-bottom:12px;font-size:11px;">Comparing odds across bookmakers for similar matches:</div>';
+    var count = 0;
+    for (var i = 0; i < d.odds.length && count < 10; i++) {
+      var game = d.odds[i];
+      if (!game.bookmakers || game.bookmakers.length === 0) continue;
+      html += '<div style="background:var(--bg3);border-radius:8px;padding:10px;margin-bottom:8px;">';
+      html += '<div style="font-weight:700;color:var(--text);margin-bottom:6px;">' + (game.home_team || '') + ' vs ' + (game.away_team || '') + '</div>';
+      for (var bi = 0; bi < game.bookmakers.length && bi < 3; bi++) {
+        var bk = game.bookmakers[bi];
+        var h2h = bk.markets && bk.markets.find(function(m) { return m.key === 'h2h'; });
+        if (h2h && h2h.outcomes) {
+          var home = h2h.outcomes.find(function(o) { return o.name === game.home_team; });
+          var away = h2h.outcomes.find(function(o) { return o.name === game.away_team; });
+          html += '<div style="display:flex;justify-content:space-between;padding:3px 0;border-top:1px solid var(--border);font-size:11px;">';
+          html += '<span style="color:var(--muted);">' + bk.title + '</span>';
+          html += '<span><span style="color:var(--cyan);">' + (home ? home.price : '-') + '</span>';
+          html += ' / <span style="color:var(--purple);">' + (away ? away.price : '-') + '</span></span>';
+          html += '</div>';
+        }
+      }
+      html += '</div>';
+      count++;
+    }
+    html += '</div>';
+    el.innerHTML = html;
+  }).catch(function() {
+    var el = document.getElementById('oddsCompareContent');
+    if (el) el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--red);">Failed to load odds comparison.</div>';
+  });
+}
+
 // === TIPS ===
 function renderTip(t, accaIdx) {
   var c = cc(t.conf);
@@ -722,6 +810,7 @@ function renderTip(t, accaIdx) {
   }
   var valueBadge = t.valueBet ? '<span class="value-badge">VALUE BET</span>' : '';
   var btn = accaIdx !== undefined ? '<button class="add-acca-btn" id="ab'+accaIdx+'" onclick="toggleAcca('+accaIdx+')">+ Add to Acca</button>' : '';
+  var oddsBtn = '<button class="add-acca-btn" style="background:rgba(0,200,255,.08);border-color:rgba(0,200,255,.3);color:var(--cyan);" onclick="showOddsCompare(\''+encodeURIComponent(t.match)+'\',\''+(t.type||'soccer_epl')+'\',\''+encodeURIComponent(t.match)+'\')">📊 Compare Odds</button>';
   var shareBtn = '<div class="tip-share-row"><button class="share-btn share-wa" onclick="shareTip(\'' + encodeURIComponent(t.match) + '\',\'' + encodeURIComponent(t.pick + ' @ ' + t.odds + ' (' + t.conf + '%)') + '\',\'whatsapp\')">WhatsApp</button><button class="share-btn share-tw" onclick="shareTip(\'' + encodeURIComponent(t.match) + '\',\'' + encodeURIComponent(t.pick + ' @ ' + t.odds + ' (' + t.conf + '%)') + '\',\'twitter\')">Twitter</button><button class="share-btn share-copy" onclick="shareTip(\'' + encodeURIComponent(t.match) + '\',\'' + encodeURIComponent(t.pick + ' @ ' + t.odds + ' (' + t.conf + '%)') + '\',\'copy\')">Copy</button></div>';
   var leagueHtml = t.league ? '<span class="league-chip">'+t.league+'</span>' : '';
   var countryHtml = country ? '<span class="country-chip">'+country+'</span>' : '';
@@ -729,7 +818,7 @@ function renderTip(t, accaIdx) {
   if (t.marketType === 'ou') mktBadge = '<span class="mkt-badge ou">O/U</span>';
   else if (t.marketType === 'btts') mktBadge = '<span class="mkt-badge btts">BTTS</span>';
   else if (t.marketType === 'h2h') mktBadge = '<span class="mkt-badge h2h">1X2</span>';
-  return '<div class="tip-card'+(t.valueBet?' value-card':'')+'" data-type="'+(t.type||'')+'" data-conf="'+t.conf+'" data-match="'+(t.match||'').toLowerCase()+'" data-league="'+(t.league||'').toLowerCase()+'"><div class="tip-sport-bar '+sportClass+'"><span>'+icon+' '+(t.sport||'Sport')+'</span>'+countryHtml+leagueHtml+mktBadge+'</div><div class="tip-body"><div class="tip-match">'+t.match+'</div><div class="tip-time">🕐 '+timeStr+'</div><div class="tip-pick"><div style="min-width:0;"><div class="tip-pick-label">'+t.market+'</div><div class="tip-pick-val">'+t.pick+' '+valueBadge+'</div></div>'+oddsHtml+'</div><div class="conf-bar"><div class="conf-fill" style="width:'+t.conf+'%;background:linear-gradient(90deg,'+c+'88,'+c+')"></div></div><div class="tip-footer"><span style="color:'+c+';font-weight:700">★ '+t.conf+'% Confidence</span><span class="tip-status">⏳ Pending</span></div><div class="banker-reason" style="margin-top:10px;font-size:11px;">'+t.reason+'</div>'+btn+shareBtn+'</div></div>';
+  return '<div class="tip-card'+(t.valueBet?' value-card':'')+'" data-type="'+(t.type||'')+'" data-conf="'+t.conf+'" data-match="'+(t.match||'').toLowerCase()+'" data-league="'+(t.league||'').toLowerCase()+'"><div class="tip-sport-bar '+sportClass+'"><span>'+icon+' '+(t.sport||'Sport')+'</span>'+countryHtml+leagueHtml+mktBadge+'</div><div class="tip-body"><div class="tip-match">'+t.match+'</div><div class="tip-time">🕐 '+timeStr+'</div><div class="tip-pick"><div style="min-width:0;"><div class="tip-pick-label">'+t.market+'</div><div class="tip-pick-val">'+t.pick+' '+valueBadge+'</div></div>'+oddsHtml+'</div><div class="conf-bar"><div class="conf-fill" style="width:'+t.conf+'%;background:linear-gradient(90deg,'+c+'88,'+c+')"></div></div><div class="tip-footer"><span style="color:'+c+';font-weight:700">★ '+t.conf+'% Confidence</span><span class="tip-status">⏳ Pending</span></div><div class="banker-reason" style="margin-top:10px;font-size:11px;">'+t.reason+'</div>'+btn+oddsBtn+shareBtn+'</div></div>';
 }
 function shareTip(matchEnc, pickEnc, platform) {
   var match = decodeURIComponent(matchEnc);

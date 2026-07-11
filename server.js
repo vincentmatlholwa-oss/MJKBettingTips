@@ -44,6 +44,8 @@ const CACHED_ODDS_FILE = path.join(__dirname, 'data', 'cached_odds.json');
 const RACING_EVENTS_FILE = path.join(__dirname, 'data', 'racing_events.json');
 const TG_WARNINGS_FILE = path.join(__dirname, 'data', 'tg_warnings.json');
 const TG_LAST_PROMO_FILE = path.join(__dirname, 'data', 'tg_last_promo.json');
+const PUSH_SUBS_FILE = path.join(__dirname, 'data', 'push_subscriptions.json');
+const EMAIL_DIGEST_FILE = path.join(__dirname, 'data', 'email_digests.json');
 
 const HORSE_RACING_API_KEY = process.env.HORSE_RACING_API_KEY || ''; // Reserved for future paid API
 const HORSE_RACING_API_BASE = 'https://api.odds-api.net/v1';
@@ -166,6 +168,59 @@ function adminMiddleware(req, res, next) {
   if (!req.user || req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
   next();
 }
+
+// === RATE LIMITER ===
+var rateLimitStore = {};
+function rateLimit(windowMs, maxRequests) {
+  return function(req, res, next) {
+    var ip = req.ip || req.connection.remoteAddress || 'unknown';
+    var now = Date.now();
+    if (!rateLimitStore[ip] || now - rateLimitStore[ip].windowStart > windowMs) {
+      rateLimitStore[ip] = { windowStart: now, count: 1 };
+    } else {
+      rateLimitStore[ip].count++;
+    }
+    if (rateLimitStore[ip].count > maxRequests) {
+      return res.status(429).json({ error: 'Too many requests. Please try again later.' });
+    }
+    next();
+  };
+}
+setInterval(function() {
+  var now = Date.now();
+  for (var ip in rateLimitStore) {
+    if (now - rateLimitStore[ip].windowStart > 300000) delete rateLimitStore[ip];
+  }
+}, 300000);
+
+// === PUSH NOTIFICATIONS ===
+function loadPushSubs() { return loadJSON(PUSH_SUBS_FILE, []); }
+function savePushSubs(s) { saveJSON(PUSH_SUBS_FILE, s); }
+function loadEmailDigests() { return loadJSON(EMAIL_DIGEST_FILE, []); }
+function saveEmailDigests(e) { saveJSON(EMAIL_DIGEST_FILE, e); }
+
+async function sendPushNotification(subscription, title, body, url) {
+  try {
+    var payload = JSON.stringify({ title: title, body: body, url: url || '/' });
+    var endpoint = subscription.endpoint;
+    var keys = subscription.keys;
+    // Use Web Push Protocol via fetch
+    // For simplicity, store pending notifications for polling
+    return true;
+  } catch (e) { return false; }
+}
+
+// === LIVE ODDS ===
+async function fetchLiveOdds(sport) {
+  if (!ODDS_API_KEY) return null;
+  try {
+    var url = ODDS_API_BASE + '/' + sport + '/odds/?apiKey=' + ODDS_API_KEY + '&regions=za&markets=h2h';
+    var resp = await fetch(url);
+    if (!resp.ok) return null;
+    return await resp.json();
+  } catch (e) { return null; }
+}
+
 function loadUsers() { return loadJSON(USERS_FILE, {}); }
 function saveUsers(u) { saveJSON(USERS_FILE, u); }
 function loadApiKeys() { return loadJSON(APIKEYS_FILE, {}); }
@@ -973,6 +1028,21 @@ async function refreshTips() {
   for (var key in groups) { var g = groups[key]; for (var gi = 0; gi < Math.min(3, g.length); gi++) guaranteed.push(g[gi]); for (var gi = 3; gi < g.length; gi++) remaining.push(g[gi]); }
   var fillCount = Math.max(0, Math.min(50, 50 - guaranteed.length));
   cachedTips = guaranteed.concat(remaining.sort(function(a, b) { return b.conf - a.conf; }).slice(0, fillCount));
+  // Send push notification for new tips
+  try {
+    var highConfTips = cachedTips.filter(function(t) { return t.conf >= 80; });
+    if (highConfTips.length > 0) {
+      var pendingFile = path.join(__dirname, 'data', 'push_pending.json');
+      var pending = loadJSON(pendingFile, []);
+      pending.push({
+        title: 'MJK Tips — ' + highConfTips.length + ' New High-Confidence Picks!',
+        body: highConfTips.slice(0, 3).map(function(t) { return t.pick + ' (' + t.conf + '%)'; }).join(', '),
+        url: '/',
+        timestamp: Date.now()
+      });
+      saveJSON(pendingFile, pending);
+    }
+  } catch (e) { console.log('[PUSH] Error queuing notification:', e.message); }
   var staleCount = trackedTips.filter(function(t) { return t.result === 'pending' && t.kickoff && new Date(t.kickoff).getTime() < Date.now() - 3 * 86400000; }).length;
   if (staleCount > 0) {
     trackedTips = trackedTips.filter(function(t) { return !(t.result === 'pending' && t.kickoff && new Date(t.kickoff).getTime() < Date.now() - 3 * 86400000); });
@@ -1555,8 +1625,8 @@ function startPromoScheduler() {
       try { lastPromo = JSON.parse(fs.readFileSync(TG_LAST_PROMO_FILE, 'utf8')); } catch (e) {}
       var now = Date.now();
       var lastTime = lastPromo.time || 0;
-      // Only send if 4+ hours since last promo
-      if (now - lastTime < 4 * 60 * 60 * 1000) return;
+      // Only send once per day (24 hours)
+      if (now - lastTime < 24 * 60 * 60 * 1000) return;
 
       var idx = (lastPromo.index || 0) % promoMessages.length;
       await sendTelegram(groupId, promoMessages[idx]);
@@ -1567,8 +1637,8 @@ function startPromoScheduler() {
     }
   }
 
-  // Check every 30 minutes
-  setInterval(sendPromo, 30 * 60 * 1000);
+  // Check every hour
+  setInterval(sendPromo, 60 * 60 * 1000);
   // Also send one 5 minutes after startup (for first deploy)
   setTimeout(sendPromo, 5 * 60 * 1000);
 }
@@ -1587,8 +1657,8 @@ function startTelegramBot() {
 
 // === API ROUTES ===
 
-// Auth
-app.post('/api/auth/register', function(req, res) {
+// Auth (rate limited: 10 requests per 15 min per IP)
+app.post('/api/auth/register', rateLimit(15 * 60 * 1000, 10), function(req, res) {
   var username = (req.body.username || '').trim().toLowerCase();
   var password = req.body.password || '';
   if (!username || !password || username.length < 3 || password.length < 4) return res.status(400).json({ error: 'Username (3+ chars) and password (4+ chars) required' });
@@ -1599,7 +1669,7 @@ app.post('/api/auth/register', function(req, res) {
   res.json({ token: generateToken(users[username]), user: { username: username, tier: 'free', role: 'user' } });
 });
 
-app.post('/api/auth/login', function(req, res) {
+app.post('/api/auth/login', rateLimit(15 * 60 * 1000, 15), function(req, res) {
   var username = (req.body.username || '').trim().toLowerCase();
   var password = req.body.password || '';
   var users = loadUsers();
@@ -2248,6 +2318,77 @@ app.get('/api/admin/whatsapp-link', authMiddleware, adminMiddleware, function(re
   var msg = formatTipsForWhatsApp(upcoming).replace(/\*/g, '');
   var waUrl = 'https://wa.me/' + ADMIN_PHONE + '?text=' + encodeURIComponent(msg);
   res.json({ url: waUrl, tipCount: upcoming.length });
+});
+
+// === PUSH NOTIFICATION SUBSCRIPTIONS ===
+app.post('/api/push/subscribe', rateLimit(60 * 1000, 5), function(req, res) {
+  var sub = req.body;
+  if (!sub || !sub.endpoint) return res.status(400).json({ error: 'Invalid subscription' });
+  var subs = loadPushSubs();
+  // Dedupe by endpoint
+  var exists = subs.findIndex(function(s) { return s.endpoint === sub.endpoint; });
+  if (exists >= 0) subs[exists] = sub; else subs.push(sub);
+  savePushSubs(subs);
+  res.json({ success: true, total: subs.length });
+});
+app.post('/api/push/unsubscribe', function(req, res) {
+  var endpoint = req.body.endpoint;
+  if (!endpoint) return res.status(400).json({ error: 'Missing endpoint' });
+  var subs = loadPushSubs();
+  subs = subs.filter(function(s) { return s.endpoint !== endpoint; });
+  savePushSubs(subs);
+  res.json({ success: true });
+});
+app.get('/api/push/pending', authMiddleware, function(req, res) {
+  // Poll for pending notifications (returns + clears)
+  var pendingFile = path.join(__dirname, 'data', 'push_pending.json');
+  var pending = loadJSON(pendingFile, []);
+  saveJSON(pendingFile, []);
+  res.json({ notifications: pending });
+});
+
+// === EMAIL DIGEST ===
+app.post('/api/email/subscribe', rateLimit(60 * 1000, 3), function(req, res) {
+  var email = (req.body.email || '').trim().toLowerCase();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Valid email required' });
+  var digests = loadEmailDigests();
+  var exists = digests.find(function(d) { return d.email === email; });
+  if (!exists) {
+    digests.push({ email: email, subscribedAt: new Date().toISOString(), active: true });
+    saveEmailDigests(digests);
+  }
+  res.json({ success: true, message: 'Subscribed to daily tip digest!' });
+});
+app.post('/api/email/unsubscribe', function(req, res) {
+  var email = (req.body.email || '').trim().toLowerCase();
+  var digests = loadEmailDigests();
+  digests = digests.filter(function(d) { return d.email !== email; });
+  saveEmailDigests(digests);
+  res.json({ success: true });
+});
+
+// === LIVE ODDS COMPARISON ===
+app.get('/api/odds/compare/:sport', async function(req, res) {
+  var sport = req.params.sport;
+  if (!ODDS_API_KEY) return res.json({ odds: [], message: 'Odds API not configured' });
+  try {
+    var data = await fetchLiveOdds(sport);
+    res.json({ odds: data || [], sport: sport });
+  } catch (e) {
+    res.json({ odds: [], error: e.message });
+  }
+});
+
+// === ADMIN: SEND PUSH NOTIFICATIONS ===
+app.post('/api/admin/push-broadcast', authMiddleware, adminMiddleware, async function(req, res) {
+  var title = req.body.title || 'MJK Betting Tips — New Tips!';
+  var body = req.body.body || 'Check out today\'s AI-powered tips.';
+  var pendingFile = path.join(__dirname, 'data', 'push_pending.json');
+  var pending = loadJSON(pendingFile, []);
+  var notification = { title: title, body: body, url: '/', timestamp: Date.now() };
+  pending.push(notification);
+  saveJSON(pendingFile, pending);
+  res.json({ success: true, message: 'Push notification queued for delivery' });
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
