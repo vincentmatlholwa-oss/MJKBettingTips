@@ -362,6 +362,20 @@ function loadBacktest() {
   }).catch(function() {});
 }
 
+// === BROADCAST ===
+function sendBroadcast() {
+  var el = document.getElementById('broadcastStatus');
+  if (el) el.textContent = 'Sending...';
+  apiPost('/api/admin/broadcast').then(function(d) {
+    if (el) el.textContent = d.error ? 'Error: ' + d.error : 'Sent! ' + d.message;
+  }).catch(function() { if (el) el.textContent = 'Network error'; });
+}
+function getWhatsAppLink() {
+  apiGet('/api/admin/whatsapp-link').then(function(d) {
+    if (d.url) { window.open(d.url, '_blank'); }
+  }).catch(function() {});
+}
+
 // === API KEYS ===
 function loadApiKey() {
   apiGet('/api/premium/api-key').then(function(d) {

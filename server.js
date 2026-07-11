@@ -820,7 +820,10 @@ async function checkResults() {
     try {
       var home, away; var parts = tip.match.split(' vs '); home = parts[0]; away = parts[1];
       if (tip.type === 'soccer_fifa_world_cup' || tip.type === 'soccer_epl') {
-        var res = await fetch(FB_API_BASE + '/matches', { headers: { 'X-Auth-Token': FB_API_KEY } });
+        var tipKickoff = new Date(tip.kickoff);
+        var dateFrom = new Date(tipKickoff.getTime() - 86400000).toISOString().split('T')[0];
+        var dateTo = new Date(now.getTime() + 86400000).toISOString().split('T')[0];
+        var res = await fetch(FB_API_BASE + '/matches?dateFrom=' + dateFrom + '&dateTo=' + dateTo, { headers: { 'X-Auth-Token': FB_API_KEY } });
         if (!res.ok) continue; var data = await res.json(); if (!data.matches) continue;
         var match = data.matches.find(function(m) { return normalizeTeamName(m.homeTeam ? m.homeTeam.name : '') === normalizeTeamName(home) && normalizeTeamName(m.awayTeam ? m.awayTeam.name : '') === normalizeTeamName(away) && m.status === 'FINISHED' && m.score && m.score.fullTime && m.score.fullTime.home !== null && m.score.fullTime.away !== null; });
         if (!match) continue;
@@ -954,15 +957,22 @@ async function refreshTips() {
   }
   for (var ti = 0; ti < allTips.length; ti++) mergeTip(allTips[ti]);
   saveTrackedTips();
-  var sorted = allTips.sort(function(a, b) { return b.conf - a.conf; });
+  var upcomingTips = allTips.filter(function(t) { return t.kickoff && new Date(t.kickoff).getTime() > Date.now(); });
+  var sorted = upcomingTips.sort(function(a, b) { return b.conf - a.conf; });
   var groups = {};
   for (var ti = 0; ti < sorted.length; ti++) { if (!groups[sorted[ti].type]) groups[sorted[ti].type] = []; groups[sorted[ti].type].push(sorted[ti]); }
   var guaranteed = []; var remaining = [];
   for (var key in groups) { var g = groups[key]; for (var gi = 0; gi < Math.min(3, g.length); gi++) guaranteed.push(g[gi]); for (var gi = 3; gi < g.length; gi++) remaining.push(g[gi]); }
   var fillCount = Math.max(0, Math.min(50, 50 - guaranteed.length));
   cachedTips = guaranteed.concat(remaining.sort(function(a, b) { return b.conf - a.conf; }).slice(0, fillCount));
+  var staleCount = trackedTips.filter(function(t) { return t.result === 'pending' && t.kickoff && new Date(t.kickoff).getTime() < Date.now() - 3 * 86400000; }).length;
+  if (staleCount > 0) {
+    trackedTips = trackedTips.filter(function(t) { return !(t.result === 'pending' && t.kickoff && new Date(t.kickoff).getTime() < Date.now() - 3 * 86400000); });
+    saveTrackedTips();
+    console.log('[CLEANUP] Removed ' + staleCount + ' stale pending tips older than 3 days');
+  }
   lastGenerated = new Date().toISOString();
-  console.log('[REFRESH] Generated ' + cachedTips.length + ' tips (' + allTips.length + ' total, ' + Object.keys(cachedOdds).filter(function(k) { return cachedOdds[k].length > 0; }).length + ' sports with odds)');
+  console.log('[REFRESH] Generated ' + cachedTips.length + ' tips (' + upcomingTips.length + ' upcoming, ' + allTips.length + ' total, ' + Object.keys(cachedOdds).filter(function(k) { return cachedOdds[k].length > 0; }).length + ' sports with odds)');
 }
 
 async function fetchSoccerFixtures() {
@@ -982,42 +992,46 @@ function loadRacingEvents() { cachedRacingEvents = loadJSON(RACING_EVENTS_FILE, 
 function saveRacingEvents() { saveJSON(RACING_EVENTS_FILE, cachedRacingEvents); }
 
 async function fetchHorseRacing() {
+  if (!ODDS_API_KEY) { console.log('[HORSE] No odds API key'); loadRacingEvents(); return; }
   try {
-    var hkjcRes = await fetch('https://bet.hkjc.com/racing/pages/odds_wpq.aspx?lang=en&date=' + new Date().toISOString().slice(0,10).replace(/-/g,''));
-    if (!hkjcRes.ok) { console.log('[HORSE] HKJC error: ' + hkjcRes.status); return; }
-    var html = await hkjcRes.text();
-    // Use a lightweight fallback: racing JSON data from free source
-    // Try Australian racing data (free, CORS-friendly)
-    var racingRes = await fetch('https://api.neds.com.au/v2/racing/races?limit=20');
-    if (racingRes.ok) {
-      var data = await racingRes.json();
-      var races = data.races || data.data || data.events || [];
-      if (!Array.isArray(races)) races = [];
-      cachedRacingEvents = races.map(function(r) {
-        var runners = (r.runners || r.entrants || r.competitors || []).map(function(h) {
-          var price = 0;
-          if (h.fixed_price || h.price) price = h.fixed_price || h.price;
-          else if (h.win_price) price = h.win_price;
-          else if (h.odds && h.odds.win) price = h.odds.win;
-          else if (h.win_odds) price = h.win_odds;
-          return { name: h.name || h.horse || h.runner || h.number || 'Horse', odds: price, number: h.number || h.saddle || '' };
-        });
-        return {
-          id: r.id || r.race_id || '',
-          track: r.venue || r.meeting || r.track || r.course || '',
-          name: r.name || r.race_name || 'Race',
-          time: r.start_time || r.time || r.advertised_start || '',
-          distance: r.distance || '',
-          runners: runners
-        };
-      });
-      saveRacingEvents();
-      console.log('[HORSE] Fetched ' + cachedRacingEvents.length + ' races from Neds');
-    } else {
-      // Fallback to cached data
-      loadRacingEvents();
-      console.log('[HORSE] Using cached (' + cachedRacingEvents.length + ' races)');
+    var res = await fetch(ODDS_API_BASE + '/sports/horse_racing/odds?apiKey=' + ODDS_API_KEY + '&regions=uk,au&markets=h2h');
+    if (res.ok) {
+      var events = await res.json();
+      if (Array.isArray(events) && events.length > 0) {
+        cachedRacingEvents = events.map(function(e) {
+          var runners = [];
+          if (e.bookmakers) {
+            for (var bi = 0; bi < e.bookmakers.length; bi++) {
+              var bm = e.bookmakers[bi];
+              if (!bm.markets) continue;
+              var mkt = bm.markets.find(function(m) { return m.key === 'h2h'; });
+              if (!mkt || !mkt.outcomes) continue;
+              for (var oi = 0; oi < mkt.outcomes.length; oi++) {
+                var o = mkt.outcomes[oi];
+                if (o.name && o.price && o.price > 1) {
+                  var existing = runners.find(function(r) { return r.name === o.name; });
+                  if (!existing) { runners.push({ name: o.name, odds: o.price, book: bm.title }); }
+                  else if (o.price > existing.odds) { existing.odds = o.price; existing.book = bm.title; }
+                }
+              }
+            }
+          }
+          return {
+            id: e.id || '',
+            track: e.sport_title || e.title || 'Horse Racing',
+            name: e.home_team || e.title || 'Race',
+            time: e.commence_time || '',
+            distance: '',
+            runners: runners
+          };
+        }).filter(function(r) { return r.runners.length >= 2; });
+        saveRacingEvents();
+        console.log('[HORSE] Fetched ' + cachedRacingEvents.length + ' races from odds API');
+        return;
+      }
     }
+    console.log('[HORSE] Odds API returned no horse racing data (HTTP ' + (res.ok ? 'empty' : res.status) + ')');
+    loadRacingEvents();
   } catch (e) { console.log('[HORSE] Error: ' + (e.message || e)); loadRacingEvents(); }
 }
 
@@ -1027,31 +1041,33 @@ function buildHorseRacingTip(event) {
   var dist = event.distance ? ' (' + event.distance + 'm)' : '';
   var time = event.time || event.kickoff || '';
   var runners = event.runners || [];
-  if (!runners || runners.length < 3) return null;
+  if (!runners || runners.length < 2) return null;
 
   var cfg = getCfg('horse_racing');
-  var pick = null, bestProb = 0, bestOdds = 0;
+  var pick = null, bestProb = 0, bestOdds = 0, bestBook = '';
   for (var i = 0; i < runners.length; i++) {
     var r = runners[i];
     var odds = parseFloat(r.odds) || 0;
-    if (odds <= 1) continue; // skip invalid odds
+    if (odds <= 1) continue;
     var prob = 1 / odds;
     if (prob > bestProb) {
       bestProb = prob;
       bestOdds = odds;
       pick = r.name || 'Runner ' + (i + 1);
+      bestBook = r.book || '';
     }
   }
   if (!pick || bestOdds <= 0) return null;
   var conf = Math.min(cfg.maxConf, Math.max(cfg.minConf, Math.round(bestProb * 100)));
   if (conf < cfg.minConf) return null;
+  if (!time || new Date(time).getTime() < Date.now()) return null;
   return {
     type: 'horse_racing', sport: 'Horse Racing', icon: '\uD83C\uDFC7',
     match: (track ? track + ' — ' : '') + name + dist,
     league: track || 'Horse Racing', country: 'International',
     marketType: 'h2h', market: 'Race Winner', marketLine: null,
     kickoff: time, pick: pick + ' to Win', odds: bestOdds.toFixed(2),
-    conf: conf, realOdds: null, bookmaker: '', valueBet: false,
+    conf: conf, realOdds: null, bookmaker: bestBook, valueBet: false,
     reason: 'AI Horse Racing — Form analysis (' + runners.length + ' runners, favourite)',
     features: [0, 0, 0, 0, 0, 0, 0, 1]
   };
@@ -1613,21 +1629,105 @@ app.post('/api/subscribe', authMiddleware, function(req, res) {
   res.json({ success: true, tier: tier, message: 'Upgraded to ' + tier + '. Payment integration coming soon.' });
 });
 
+const ADMIN_PHONE = '27677834591';
+
+function formatTipsForWhatsApp(tips) {
+  var now = new Date();
+  var dateStr = now.toLocaleDateString('en-ZA', { timeZone: 'Africa/Johannesburg', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  var msg = '*MJK Betting Tips — ' + dateStr + '*\n\n';
+  var bySport = {};
+  for (var i = 0; i < tips.length; i++) {
+    var t = tips[i];
+    var sportKey = t.type || 'other';
+    if (!bySport[sportKey]) bySport[sportKey] = { name: t.sport || sportKey, icon: t.icon || '', tips: [] };
+    bySport[sportKey].tips.push(t);
+  }
+  for (var sk in bySport) {
+    var group = bySport[sk];
+    msg += '*' + group.icon + ' ' + group.name + '*\n';
+    for (var i = 0; i < group.tips.length; i++) {
+      var t = group.tips[i];
+      var kickoff = t.kickoff ? new Date(t.kickoff).toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg', hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' }) : 'TBD';
+      msg += (i + 1) + '. ' + t.match + '\n';
+      msg += '   ' + t.pick + ' @ ' + t.odds + ' (' + t.conf + '%)\n';
+      msg += '   ' + t.market + ' | ' + kickoff + (t.valueBet ? ' | VALUE' : '') + '\n';
+    }
+    msg += '\n';
+  }
+  var upcoming = tips.filter(function(t) { return t.kickoff && new Date(t.kickoff).getTime() > Date.now(); });
+  var highConf = upcoming.filter(function(t) { return t.conf >= 80; });
+  if (highConf.length > 0) {
+    msg += '*BANKERS (80%+):*\n';
+    var seen = {};
+    for (var i = 0; i < highConf.length && Object.keys(seen).length < 3; i++) {
+      var b = highConf[i];
+      if (seen[b.type]) continue;
+      seen[b.type] = true;
+      msg += '⭐ ' + b.match + '\n   ' + b.pick + ' @ ' + b.odds + ' (' + b.conf + '%)\n';
+    }
+    msg += '\n';
+  }
+  msg += 'AI-powered predictions | Confidence 65%+\nmjkbettingtips.com';
+  return msg;
+}
+
+async function sendDailyBroadcast() {
+  if (!cachedTips || cachedTips.length === 0) { console.log('[BROADCAST] No tips to broadcast'); return; }
+  var upcoming = cachedTips.filter(function(t) { return t.kickoff && new Date(t.kickoff).getTime() > Date.now(); });
+  if (upcoming.length === 0) { console.log('[BROADCAST] No upcoming tips'); return; }
+  var msg = formatTipsForWhatsApp(upcoming);
+  console.log('[BROADCAST] Sending daily tips to admin (' + upcoming.length + ' tips)');
+  if (TELEGRAM_BOT_TOKEN) {
+    var adminSubs = loadTelegramSubs();
+    for (var i = 0; i < adminSubs.length; i++) {
+      await sendTelegram(adminSubs[i].chatId, msg.replace(/\*/g, ''));
+    }
+  }
+  var waUrl = 'https://wa.me/' + ADMIN_PHONE + '?text=' + encodeURIComponent(msg.replace(/\*/g, ''));
+  console.log('[BROADCAST] WhatsApp link: ' + waUrl.slice(0, 100) + '...');
+  saveJSON(path.join(__dirname, 'data', 'last_broadcast.json'), { sentAt: new Date().toISOString(), tipCount: upcoming.length, message: msg, whatsappUrl: waUrl });
+}
+
+function scheduleDailyBroadcast() {
+  var now = new Date();
+  var saTime = new Date(now.toLocaleString('en-US', { timeZone: 'Africa/Johannesburg' }));
+  var target = new Date(saTime);
+  target.setHours(6, 0, 0, 0);
+  if (saTime.getHours() >= 6) target.setDate(target.getDate() + 1);
+  var delay = target.getTime() - saTime.getTime();
+  console.log('[BROADCAST] Next daily broadcast in ' + Math.round(delay / 3600000) + ' hours');
+  setTimeout(function() {
+    sendDailyBroadcast();
+    setInterval(sendDailyBroadcast, 86400000);
+  }, delay);
+}
+
+app.post('/api/admin/broadcast', authMiddleware, adminMiddleware, function(req, res) {
+  sendDailyBroadcast().then(function() { res.json({ success: true, message: 'Daily broadcast sent to admin' }); }).catch(function(e) { res.status(500).json({ error: e.message }); });
+});
+
+app.get('/api/admin/whatsapp-link', authMiddleware, adminMiddleware, function(req, res) {
+  var upcoming = cachedTips.filter(function(t) { return t.kickoff && new Date(t.kickoff).getTime() > Date.now(); });
+  var msg = formatTipsForWhatsApp(upcoming);
+  var waUrl = 'https://wa.me/' + ADMIN_PHONE + '?text=' + encodeURIComponent(msg.replace(/\*/g, ''));
+  res.json({ url: waUrl, tipCount: upcoming.length });
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
-loadTrackedTips(); loadElo(); loadForm(); loadWeights(); loadCalibration(); loadTeamStats(); loadH2H(); loadMatchDates(); loadModelCoeffs(); loadFeatureLogs(); loadSportHealth(); loadCachedOdds();
+loadTrackedTips(); loadElo(); loadForm(); loadWeights(); loadCalibration(); loadTeamStats(); loadH2H(); loadMatchDates(); loadModelCoeffs(); loadFeatureLogs(); loadSportHealth(); loadCachedOdds(); loadRacingEvents();
 refreshTips();
 setInterval(refreshTips, 60000);
 setInterval(checkResults, 300000);
-setInterval(function() { loadFeatureLogs(); for (var si = 0; si < SPORTS.length; si++) trainSportModel(SPORTS[si].key); }, 1800000); // retrain every 30 min
-setInterval(function() { loadTrackedTips(); checkSportHealth(); }, 1800000); // health check every 30 min
+setInterval(function() { loadFeatureLogs(); for (var si = 0; si < SPORTS.length; si++) trainSportModel(SPORTS[si].key); }, 1800000);
+setInterval(function() { loadTrackedTips(); checkSportHealth(); }, 1800000);
 
 app.listen(port, function() {
-  console.log('MJK Betting Tips v7 (Advanced AI + Telegram Bot) running on http://localhost:' + port);
+  console.log('MJK Betting Tips v8 (Advanced AI + Telegram + Daily Broadcast) running on http://localhost:' + port);
   if (TELEGRAM_BOT_TOKEN) console.log('[TELEGRAM] Bot enabled (long-polling mode)');
   console.log('[AUTH] Admin login: ' + ADMIN_USER + ' / ' + ADMIN_PASS);
   console.log('[AI] Dixon-Coles Poisson, logistic regression, per-sport config, team stats, H2H, fatigue tracking loaded');
   startTelegramBot();
-  // Initial model training on startup
+  scheduleDailyBroadcast();
   setTimeout(function() { console.log('[AI] Initial model training starting...'); loadTrackedTips(); trainAllModels(); checkSportHealth(); }, 5000);
 });
