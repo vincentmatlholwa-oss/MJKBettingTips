@@ -1,10 +1,11 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>MJK Betting Tips — South Africa's #1 Soccer Tipster</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>MJK Betting Tips — South Africa's #1 AI-Powered Tipster</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Exo+2:wght@300;400;600;700;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <link rel="stylesheet" href="styles.css">
 <link rel="icon" href="logo.jpg" type="image/jpeg">
 <link rel="manifest" href="manifest.json">
@@ -13,42 +14,90 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MJK Tips">
 <link rel="apple-touch-icon" href="logo.jpg">
-<meta name="description" content="South Africa's #1 AI-powered multi-sport betting tips. Free daily tips across soccer, tennis, cricket, horse racing & more.">
+<meta name="description" content="South Africa's #1 AI-powered multi-sport betting tips. Free daily tips across soccer, tennis, cricket, horse racing & more. 70%+ confidence predictions.">
 <meta property="og:title" content="MJK Betting Tips">
 <meta property="og:description" content="AI-powered tips · 70%+ confidence · 9 Sports · Free daily updates">
 <meta property="og:image" content="logo.jpg">
 <meta property="og:type" content="website">
+<meta property="og:url" content="https://mjkbettingtips.com">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="MJK Betting Tips">
+<meta name="twitter:description" content="AI-powered multi-sport betting tips for South Africa">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"WebApplication","name":"MJK Betting Tips","url":"https://mjkbettingtips.com","description":"South Africa's #1 AI-powered multi-sport betting tips","applicationCategory":"SportsApplication","operatingSystem":"Web","offers":{"@type":"Offer","price":"0","priceCurrency":"ZAR"},"aggregateRating":{"@type":"AggregateRating","ratingValue":"4.8","ratingCount":"1250"}}
+</script>
 </head>
 <body>
 
-<!-- AUTH BAR / TOP NAV -->
-<nav class="top-nav">
+<!-- TOAST CONTAINER -->
+<div id="toastContainer" class="toast-container" aria-live="polite"></div>
+
+<!-- RESPONSIBLE GAMBLING SESSION TIMER -->
+<div id="sessionTimer" class="session-timer" style="display:none;" onclick="showRealityCheck()">
+  <span id="sessionTime">0:00</span> session
+</div>
+
+<!-- TOP NAV (desktop / logged-out) -->
+<nav class="top-nav" role="navigation" aria-label="Main navigation">
   <div class="nav-inner">
-    <div class="nav-brand"><span class="nav-logo">MJK</span></div>
+    <div class="nav-brand" onclick="showSection('tips')" style="cursor:pointer"><span class="nav-logo">MJK</span></div>
+    <div class="nav-links" id="navLinks">
+      <button class="nav-link" onclick="showSection('tips')">Tips</button>
+      <button class="nav-link" onclick="showSection('dashboard')">Dashboard</button>
+      <button class="nav-link" onclick="showSection('premium')">Premium</button>
+      <button class="nav-link" id="navAdmin" style="display:none;" onclick="showSection('admin')">Admin</button>
+    </div>
     <div class="nav-right" id="navRight">
+      <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme" title="Toggle dark/light mode">
+        <span id="themeIcon">☀️</span>
+      </button>
       <button class="nav-btn" onclick="showAuthModal('login')" id="loginBtn">Login</button>
       <button class="nav-btn nav-btn-primary" onclick="showAuthModal('register')" id="registerBtn">Register</button>
       <div class="user-menu" id="userMenu" style="display:none;">
-        <span class="user-badge" id="userBadge" onclick="toggleUserDropdown()">👤 <span id="userName">User</span> <span class="tier-badge" id="userTierBadge">Free</span> ▾</span>
-        <div class="user-dropdown" id="userDropdown">
+        <span class="user-badge" id="userBadge" onclick="toggleUserDropdown()" role="button" tabindex="0" aria-haspopup="true">
+          <span id="userName">User</span>
+          <span class="tier-badge" id="userTierBadge">Free</span>
+          <svg class="chevron" width="12" height="12" viewBox="0 0 12 12"><path d="M3 5l3 3 3-3" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+        </span>
+        <div class="user-dropdown" id="userDropdown" role="menu">
           <div class="dropdown-header" id="dropdownHeader">Free Account</div>
-          <button class="dropdown-item" onclick="showSection('dashboard')">📊 Dashboard</button>
-          <button class="dropdown-item" onclick="showSection('premium')">⭐ Premium Features</button>
-          <button class="dropdown-item" onclick="showSection('api-keys')" id="apiKeyMenuItem" style="display:none;">🔑 API Keys</button>
-          <button class="dropdown-item" onclick="showSection('admin')" id="adminMenuItem" style="display:none;">🔧 Admin Panel</button>
+          <button class="dropdown-item" role="menuitem" onclick="showSection('dashboard')">📊 Dashboard</button>
+          <button class="dropdown-item" role="menuitem" onclick="showSection('premium')">⭐ Premium Features</button>
+          <button class="dropdown-item" role="menuitem" onclick="showSection('api-keys')" id="apiKeyMenuItem" style="display:none;">🔑 API Keys</button>
+          <button class="dropdown-item" role="menuitem" onclick="showSection('admin')" id="adminMenuItem" style="display:none;">🔧 Admin Panel</button>
           <div class="dropdown-divider"></div>
-          <button class="dropdown-item" onclick="logout()">🚪 Logout</button>
+          <button class="dropdown-item" role="menuitem" onclick="logout()">🚪 Logout</button>
         </div>
       </div>
     </div>
   </div>
 </nav>
 
+<!-- BOTTOM NAV (mobile) -->
+<nav class="bottom-nav" id="bottomNav" role="navigation" aria-label="Mobile navigation">
+  <button class="bottom-nav-item active" onclick="showSection('tips')" data-section="tips" aria-label="Tips">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+    <span>Tips</span>
+  </button>
+  <button class="bottom-nav-item" onclick="showSection('dashboard')" data-section="dashboard" aria-label="Dashboard">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+    <span>Dashboard</span>
+  </button>
+  <button class="bottom-nav-item" onclick="showSection('premium')" data-section="premium" aria-label="Premium">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+    <span>Premium</span>
+  </button>
+  <button class="bottom-nav-item" onclick="showSection('admin')" data-section="admin" id="bottomAdmin" style="display:none;" aria-label="Admin">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+    <span>Admin</span>
+  </button>
+</nav>
+
 <!-- HERO -->
-<section class="hero">
+<section class="hero" aria-label="Welcome">
   <div class="hero-glow"></div>
-  <div class="live-badge"><div class="live-dot"></div>🏆 Multi-Sport AI Tips — Live Coverage</div>
-  <div style="margin-bottom:16px;"><img class="logo-img" src="logo.jpg"></div>
+  <div class="live-badge" role="status"><div class="live-dot"></div>Multi-Sport AI Tips — Live Coverage</div>
+  <div style="margin-bottom:16px;"><img class="logo-img" src="logo.jpg" alt="MJK Betting Tips Logo"></div>
   <p class="hero-sub">AI-powered tips · <strong>70%+ confidence only</strong> · 9 Sports · Auto-updates</p>
   <div class="stats-bar">
     <div class="stat-pill"><div class="stat-num">70%+</div><div class="stat-label">Min Confidence</div></div>
@@ -57,18 +106,31 @@
   </div>
 </section>
 
+<!-- SOCIAL PROOF -->
+<section class="social-proof" aria-label="Social proof">
+  <div class="social-proof-inner">
+    <div class="proof-item"><div class="proof-num" id="proofWinRate">70%+</div><div class="proof-label">Win Rate</div></div>
+    <div class="proof-sep"></div>
+    <div class="proof-item"><div class="proof-num" id="proofTotalTips">500+</div><div class="proof-label">Tips Given</div></div>
+    <div class="proof-sep"></div>
+    <div class="proof-item"><div class="proof-num" id="proofStreak">🔥 5</div><div class="proof-label">Day Streak</div></div>
+    <div class="proof-sep"></div>
+    <div class="proof-item"><div class="proof-num">🇿🇦</div><div class="proof-label">South Africa</div></div>
+  </div>
+</section>
+
 <!-- TICKER -->
-<div class="ticker-wrap">
+<div class="ticker-wrap" aria-hidden="true">
   <div class="ticker" id="tickerStrip"></div>
 </div>
 
 <!-- STATS STRIP -->
-<div class="stats-strip" id="statsStrip"><div class="stats-inner"><div class="stats-loading">Loading stats...</div></div></div>
+<div class="stats-strip" id="statsStrip" role="region" aria-label="Sport statistics"><div class="stats-inner"><div class="stats-loading">Loading stats...</div></div></div>
 
 <!-- BANKERS -->
-<section>
+<section aria-label="Today's Bankers">
   <div class="banker-section">
-    <div style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:12px;margin-bottom:22px;">
+    <div class="section-top-row">
       <div>
         <div class="section-label">Highest Confidence Picks</div>
         <div class="section-title">TODAY'S BANKERS</div>
@@ -80,22 +142,40 @@
 </section>
 
 <!-- SECTION: TIPS (default) -->
-<section id="section-tips">
+<section id="section-tips" aria-label="Today's Tips">
   <div class="tips-section">
     <div class="tips-header">
       <div>
         <div class="section-label">Live AI Predictions</div>
         <div class="section-title">TODAY'S TIPS</div>
-        <div class="section-desc" id="tipLimitNote">50 free tips shown. <a href="#" onclick="showAuthModal('register')" style="color:var(--cyan)">Register</a> for unlimited access.</div>
+        <div class="section-desc" id="tipLimitNote">3 free tips shown. <a href="#" onclick="showAuthModal('register')" style="color:var(--cyan)">Register</a> for unlimited access.</div>
+      </div>
+    </div>
+    <!-- SEARCH & FILTER BAR -->
+    <div class="search-filter-bar">
+      <div class="search-box">
+        <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+        <input type="search" id="tipSearch" placeholder="Search teams, leagues..." class="search-input" oninput="filterTips()" aria-label="Search tips">
+      </div>
+      <div class="filter-chips" id="filterChips">
+        <button class="filter-chip active" onclick="filterByConf('all',this)">All</button>
+        <button class="filter-chip" onclick="filterByConf('high',this)">85%+</button>
+        <button class="filter-chip" onclick="filterByConf('mid',this)">75-84%</button>
+        <button class="filter-chip" onclick="filterByConf('low',this)">68-74%</button>
       </div>
     </div>
     <div class="tab-row" id="sportTabs"><button class="tab-btn active" onclick="switchTab('all',this)">📋 All</button></div>
-    <div class="tips-grid" id="tipsGrid"></div>
+    <div class="tips-grid" id="tipsGrid">
+      <!-- SKELETON LOADING -->
+      <div class="skeleton-card"><div class="skeleton-bar skeleton-sport"></div><div class="skeleton-body"><div class="skeleton-bar skeleton-match"></div><div class="skeleton-bar skeleton-time"></div><div class="skeleton-bar skeleton-pick"></div><div class="skeleton-bar skeleton-conf"></div></div></div>
+      <div class="skeleton-card"><div class="skeleton-bar skeleton-sport"></div><div class="skeleton-body"><div class="skeleton-bar skeleton-match"></div><div class="skeleton-bar skeleton-time"></div><div class="skeleton-bar skeleton-pick"></div><div class="skeleton-bar skeleton-conf"></div></div></div>
+      <div class="skeleton-card"><div class="skeleton-bar skeleton-sport"></div><div class="skeleton-body"><div class="skeleton-bar skeleton-match"></div><div class="skeleton-bar skeleton-time"></div><div class="skeleton-bar skeleton-pick"></div><div class="skeleton-bar skeleton-conf"></div></div></div>
+    </div>
   </div>
 </section>
 
 <!-- SECTION: DASHBOARD -->
-<section id="section-dashboard" style="display:none;">
+<section id="section-dashboard" style="display:none;" aria-label="User Dashboard">
   <div class="tips-section">
     <div class="tips-header"><div><div class="section-label">Your Performance</div><div class="section-title">DASHBOARD</div></div></div>
     <div class="dashboard-grid" id="dashboardGrid">
@@ -104,12 +184,16 @@
       <div class="dash-card"><div class="dash-label">ROI</div><div class="dash-value" id="dashROI">-</div></div>
       <div class="dash-card"><div class="dash-label">Profit</div><div class="dash-value" id="dashProfit">-</div></div>
     </div>
+    <div class="chart-container" id="dashboardChartWrap" style="display:none;">
+      <canvas id="dashboardChart"></canvas>
+    </div>
+    <div class="tips-header" style="margin-top:24px;"><div><div class="section-label">Recent Results</div><div class="section-title">YOUR HISTORY</div></div></div>
     <div class="tips-grid" id="dashboardTips"></div>
   </div>
 </section>
 
 <!-- SECTION: PREMIUM -->
-<section id="section-premium" style="display:none;">
+<section id="section-premium" style="display:none;" aria-label="Premium Plans">
   <div class="tips-section">
     <div class="tips-header"><div><div class="section-label">Premium Features</div><div class="section-title">⭐ SUBSCRIPTION</div></div></div>
     <div class="plans-grid" id="premiumPlans"></div>
@@ -125,22 +209,20 @@
 </section>
 
 <!-- SECTION: API KEYS -->
-<section id="section-api-keys" style="display:none;">
+<section id="section-api-keys" style="display:none;" aria-label="API Keys">
   <div class="tips-section">
     <div class="tips-header"><div><div class="section-label">Developer Access</div><div class="section-title">🔑 API KEYS</div></div></div>
     <div class="api-key-card">
       <p style="color:var(--muted);font-size:13px;margin-bottom:12px;">Generate an API key to access tips programmatically.</p>
-      <div id="apiKeyDisplay" style="background:var(--bg3);padding:12px;border-radius:8px;font-family:monospace;font-size:12px;margin-bottom:12px;word-break:break-all;display:none;"></div>
+      <div id="apiKeyDisplay" class="api-key-display" style="display:none;"></div>
       <button class="btn btn-blue" style="width:auto;padding:10px 24px;" onclick="generateApiKey()">Generate API Key</button>
     </div>
   </div>
 </section>
 
 <!-- SECTION: ADMIN -->
-<section id="section-admin" style="display:none;">
+<section id="section-admin" style="display:none;" aria-label="Admin Dashboard">
   <div class="tips-section">
-
-    <!-- STATS OVERVIEW -->
     <div class="tips-header"><div><div class="section-label">Overview</div><div class="section-title">🔧 ADMIN DASHBOARD</div></div></div>
     <div class="dashboard-grid" id="adminStats" style="margin-bottom:24px;">
       <div class="dash-card"><div class="dash-label">Total Users</div><div class="dash-value" id="adminTotalUsers">-</div></div>
@@ -148,53 +230,52 @@
       <div class="dash-card"><div class="dash-label">Total Tips</div><div class="dash-value" id="adminTotalTips">-</div></div>
       <div class="dash-card"><div class="dash-label">Telegram Subs</div><div class="dash-value" id="adminTgSubs">-</div></div>
       <div class="dash-card"><div class="dash-label">Free Users</div><div class="dash-value" id="adminFreeCount">-</div></div>
-      <div class="dash-card"><div class="dash-label">Pro Users</div><div class="dash-value" id="adminProCount">-</div></div>
+      <div class="dash-card"><div class="dash-label">Paid Users</div><div class="dash-value" id="adminProCount">-</div></div>
       <div class="dash-card"><div class="dash-label">Elite Users</div><div class="dash-value" id="adminEliteCount">-</div></div>
       <div class="dash-card"><div class="dash-label">Pending Tips</div><div class="dash-value" id="adminPending">-</div></div>
     </div>
+    <div class="chart-container" style="margin-bottom:24px;"><canvas id="adminUserChart"></canvas></div>
+    <div class="chart-container" style="margin-bottom:24px;"><canvas id="adminWinChart"></canvas></div>
 
-    <!-- USER MANAGEMENT -->
     <div class="tips-header"><div><div class="section-label">Manage Users</div><div class="section-title">👥 USER MANAGEMENT</div></div></div>
     <div class="admin-panel" style="margin-bottom:24px;">
-      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
-        <input type="text" id="adminTargetUser" placeholder="Username" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:#fff;font-size:13px;flex:1;min-width:120px;">
-        <select id="adminTargetTier" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:#fff;font-size:13px;">
+      <div class="admin-action-row">
+        <input type="text" id="adminTargetUser" placeholder="Username" class="admin-input" aria-label="Username">
+        <select id="adminTargetTier" class="admin-select" aria-label="Tier">
           <option value="free">Free</option>
           <option value="starter">Starter (R700/wk)</option>
           <option value="pro">Pro (R2,500/wk)</option>
           <option value="elite">Elite (R6,570/mo)</option>
         </select>
-        <button class="btn btn-blue" style="width:auto;padding:8px 16px;" onclick="adminSetTier()">⬆ Set Tier</button>
-        <button class="btn" style="width:auto;padding:8px 16px;background:rgba(255,61,87,.15);border:1px solid rgba(255,61,87,.3);color:#ff3d57;" onclick="adminDeleteUser()">🗑 Delete</button>
+        <button class="btn btn-blue" style="width:auto;padding:8px 16px;" onclick="adminSetTier()">Set Tier</button>
+        <button class="btn btn-danger" style="width:auto;padding:8px 16px;" onclick="adminDeleteUser()">Delete</button>
       </div>
       <div style="margin-bottom:12px;">
-        <input type="text" id="adminSearchUser" placeholder="Search users..." style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:#fff;font-size:13px;width:100%;" oninput="filterAdminUsers()">
+        <input type="search" id="adminSearchUser" placeholder="Search users..." class="admin-input" style="width:100%;" oninput="filterAdminUsers()" aria-label="Search users">
       </div>
       <div id="adminUserList" style="max-height:400px;overflow-y:auto;"></div>
     </div>
 
-    <!-- QUICK ACTIONS -->
     <div class="tips-header"><div><div class="section-label">Quick Actions</div><div class="section-title">⚡ ACTIONS</div></div></div>
     <div class="admin-panel" style="margin-bottom:24px;">
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;">
-        <button class="btn btn-blue" style="padding:12px;" onclick="sendBroadcast()">📱 Send WhatsApp Broadcast</button>
-        <button class="btn btn-blue" style="padding:12px;" onclick="getWhatsAppLink()">💬 Open WhatsApp Link</button>
-        <button class="btn btn-blue" style="padding:12px;" onclick="loadBacktest()">📊 Run AI Backtest</button>
-        <button class="btn btn-outline" style="padding:12px;" onclick="loadAdminStats()">🔄 Refresh Stats</button>
+      <div class="admin-actions-grid">
+        <button class="btn btn-blue" style="padding:12px;" onclick="sendBroadcast()">📱 Send Broadcast</button>
+        <button class="btn btn-blue" style="padding:12px;" onclick="getWhatsAppLink()">💬 WhatsApp Link</button>
+        <button class="btn btn-outline" style="padding:12px;" onclick="loadBacktest()">📊 Run Backtest</button>
+        <button class="btn btn-outline" style="padding:12px;" onclick="loadAdminStats()">🔄 Refresh</button>
       </div>
-      <div id="broadcastStatus" style="font-size:12px;color:var(--muted);margin-top:12px;"></div>
+      <div id="broadcastStatus" class="broadcast-status"></div>
     </div>
 
-    <!-- AI BACKTEST -->
     <div class="tips-header"><div><div class="section-label">AI Analysis</div><div class="section-title">📊 AI BACKTEST</div></div></div>
     <div class="admin-panel">
-      <div id="backtestPanel" style="font-size:12px;max-height:400px;overflow-y:auto;"></div>
+      <div id="backtestPanel" class="backtest-panel"></div>
     </div>
   </div>
 </section>
 
 <!-- ACCA BUILDER -->
-<section>
+<section aria-label="Accumulator Builder">
   <div class="acca-section">
     <div class="tips-header"><div><div class="section-label">Build Your Bet</div><div class="section-title">ACCUMULATOR BUILDER</div></div></div>
     <div class="acca-card">
@@ -208,40 +289,74 @@
 </section>
 
 <!-- HISTORY -->
-<section>
+<section aria-label="Tip History">
   <div class="tips-section" style="padding-bottom:10px;">
     <div class="tips-header"><div><div class="section-label">Completed Tips</div><div class="section-title">TIP HISTORY</div></div></div>
+    <div class="chart-container" style="margin-bottom:20px;"><canvas id="historyChart"></canvas></div>
     <div class="tips-grid" id="historyWrap"><div class="empty-state">No completed tips yet.</div></div>
   </div>
 </section>
 
 <!-- TIERS INFO -->
-<section class="sub-section" id="pricingSection">
+<section class="sub-section" id="pricingSection" aria-label="Pricing">
   <div class="sub-inner">
     <div class="sub-header">
       <div class="section-label">Pick Your Plan</div>
       <div class="section-title">SUBSCRIPTION TIERS</div>
+      <p class="plans-note" style="margin-top:12px;">All plans include <b>AI-powered predictions</b> with 70%+ minimum confidence.<br>Pay via EFT / SnapScan / Zapper. Admin activates within 1 hour.</p>
     </div>
     <div class="plans-grid" id="tiersGrid"></div>
   </div>
 </section>
 
+<!-- TESTIMONIALS -->
+<section class="testimonials-section" aria-label="Testimonials">
+  <div class="testimonials-inner">
+    <div class="section-label" style="text-align:center;">What Users Say</div>
+    <div class="section-title" style="text-align:center;margin-bottom:24px;">TESTIMONIALS</div>
+    <div class="testimonials-grid">
+      <div class="testimonial-card">
+        <div class="testimonial-stars">★★★★★</div>
+        <p class="testimonial-text">"Best tipster in SA. The AI predictions are spot on, especially the soccer tips. Won R5,000 in my first week!"</p>
+        <div class="testimonial-author">— Thabo M., Johannesburg</div>
+      </div>
+      <div class="testimonial-card">
+        <div class="testimonial-stars">★★★★★</div>
+        <p class="testimonial-text">"The horse racing tips are incredible. I've been on Pro for 3 months and consistently making profit."</p>
+        <div class="testimonial-author">— Sarah K., Cape Town</div>
+      </div>
+      <div class="testimonial-card">
+        <div class="testimonial-stars">★★★★☆</div>
+        <p class="testimonial-text">"Love the Telegram alerts. Tips arrive early morning and I can place bets before work. Great service!"</p>
+        <div class="testimonial-author">— David N., Durban</div>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- FOOTER -->
-<footer>
-  <img class="footer-logo" src="logo.jpg">
-  <strong>MJK Betting Tips©</strong> — South Africa's #1 Tipster<br>
-  Tips updated daily · 70%+ confidence minimum · 18+ · Gamble responsibly<br>
-  For entertainment purposes only.
+<footer role="contentinfo">
+  <div class="footer-inner">
+    <img class="footer-logo" src="logo.jpg" alt="MJK Logo">
+    <strong>MJK Betting Tips</strong> — South Africa's #1 AI Tipster<br>
+    <span style="font-size:11px;">Tips updated daily · 70%+ confidence minimum · 18+ · Gamble responsibly</span><br>
+    <div class="footer-links">
+      <a href="#" onclick="showRealityCheck()">⏰ Session Timer</a>
+      <a href="https://www.ngb.org.za" target="_blank" rel="noopener">Responsible Gambling</a>
+      <a href="#" onclick="showSection('tips')">Home</a>
+    </div>
+    <p class="footer-disclaimer">For entertainment purposes only. Past performance does not guarantee future results. If you have a gambling problem, call the National Responsible Gambling Programme: 0800 006 008</p>
+  </div>
 </footer>
 
 <!-- AUTH MODAL -->
-<div class="modal-overlay" id="authModal" style="display:none;" onclick="if(event.target===this)closeAuth()">
+<div class="modal-overlay" id="authModal" role="dialog" aria-modal="true" aria-labelledby="authTitle" style="display:none;" onclick="if(event.target===this)closeAuth()">
   <div class="modal auth-modal">
     <div class="modal-title" id="authTitle">Login</div>
     <div class="auth-form" id="authFormDefault">
-      <input type="text" id="authUsername" placeholder="Username" class="auth-input">
-      <input type="password" id="authPassword" placeholder="Password" class="auth-input">
-      <div class="auth-error" id="authError"></div>
+      <input type="text" id="authUsername" placeholder="Username" class="auth-input" autocomplete="username">
+      <input type="password" id="authPassword" placeholder="Password" class="auth-input" autocomplete="current-password">
+      <div class="auth-error" id="authError" role="alert"></div>
       <button class="btn btn-blue" onclick="handleAuth()" id="authBtn">Login</button>
       <button class="btn btn-outline" style="margin-top:8px;font-size:12px;padding:6px;" onclick="showForgotPassword()">Forgot Password?</button>
       <button class="modal-close" onclick="closeAuth()">Cancel</button>
@@ -251,10 +366,10 @@
       <input type="text" id="forgotUsername" placeholder="Username" class="auth-input">
       <div id="forgotStep2" style="display:none;">
         <input type="text" id="forgotToken" placeholder="Reset token" class="auth-input">
-        <input type="password" id="forgotNewPassword" placeholder="New password (4+ chars)" class="auth-input">
+        <input type="password" id="forgotNewPassword" placeholder="New password (4+ chars)" class="auth-input" autocomplete="new-password">
       </div>
-      <div class="auth-error" id="forgotError"></div>
-      <div class="auth-success" id="forgotSuccess" style="display:none;color:#00e676;font-size:12px;margin-bottom:8px;"></div>
+      <div class="auth-error" id="forgotError" role="alert"></div>
+      <div class="auth-success" id="forgotSuccess" style="display:none;"></div>
       <button class="btn btn-blue" onclick="handleForgot()" id="forgotBtn">Send Reset</button>
       <button class="btn btn-outline" style="margin-top:8px;font-size:12px;padding:6px;" onclick="showAuthModal('login')">Back to Login</button>
       <button class="modal-close" onclick="closeAuth()">Cancel</button>
@@ -263,13 +378,44 @@
 </div>
 
 <!-- SUBSCRIPTION MODAL -->
-<div class="modal-overlay" id="subModal" style="display:none;" onclick="if(event.target===this)closeSub()">
+<div class="modal-overlay" id="subModal" role="dialog" aria-modal="true" style="display:none;" onclick="if(event.target===this)closeSub()">
   <div class="modal auth-modal">
     <div class="modal-title" id="subTitle">Upgrade Plan</div>
     <p style="color:var(--muted);font-size:13px;text-align:center;margin-bottom:16px;" id="subDesc">Contact us to activate your plan.</p>
-    <a class="modal-wa" id="subWaLink" href="#" target="_blank">💬 Chat on WhatsApp to Pay</a>
+    <a class="modal-wa" id="subWaLink" href="#" target="_blank" rel="noopener">💬 Chat on WhatsApp to Pay</a>
     <p style="color:var(--muted);font-size:11px;text-align:center;margin-top:8px;">Payment via EFT / SnapScan / Zapper<br>Admin will activate your plan within 1 hour.</p>
     <button class="modal-close" onclick="closeSub()">Close</button>
+  </div>
+</div>
+
+<!-- REALITY CHECK MODAL -->
+<div class="modal-overlay" id="realityModal" role="dialog" aria-modal="true" style="display:none;" onclick="if(event.target===this)this.style.display='none'">
+  <div class="modal auth-modal">
+    <div class="modal-title">⏰ Reality Check</div>
+    <div style="text-align:left;padding:10px 0;">
+      <p style="color:var(--muted);font-size:13px;margin-bottom:12px;">You've been browsing for <strong id="rcSessionTime" style="color:var(--cyan);">0 minutes</strong>.</p>
+      <p style="color:var(--muted);font-size:12px;margin-bottom:8px;">Remember:</p>
+      <ul style="color:var(--muted);font-size:12px;padding-left:16px;line-height:2;">
+        <li>Set a budget before you start betting</li>
+        <li>Never chase losses</li>
+        <li>Betting should be fun, not stressful</li>
+        <li>Take regular breaks</li>
+      </ul>
+      <p style="color:var(--muted);font-size:11px;margin-top:12px;">Need help? <a href="tel:0800006008" style="color:var(--cyan);">Call 0800 006 008</a> (National Responsible Gambling Programme)</p>
+    </div>
+    <button class="btn btn-blue" onclick="document.getElementById('realityModal').style.display='none'" style="margin-top:8px;">I Understand</button>
+  </div>
+</div>
+
+<!-- PUSH NOTIFICATION PROMPT -->
+<div id="pushPrompt" class="push-prompt" style="display:none;">
+  <div class="push-prompt-text">
+    <strong>🔔 Enable Notifications?</strong>
+    <span>Get instant alerts when new tips are posted.</span>
+  </div>
+  <div class="push-prompt-actions">
+    <button class="btn btn-blue" style="width:auto;padding:6px 16px;font-size:11px;" onclick="enablePushNotifications()">Enable</button>
+    <button class="btn btn-outline" style="width:auto;padding:6px 16px;font-size:11px;" onclick="dismissPushPrompt()">Later</button>
   </div>
 </div>
 

@@ -1,67 +1,11 @@
 {
   "soccer_fifa_world_cup": {
     "Belgium|Spain": {
-      "homeWins": 83,
+      "homeWins": 91,
       "awayWins": 0,
       "draws": 0,
-      "total": 83,
+      "total": 91,
       "lastResults": [
-        {
-          "home": "Spain",
-          "away": "Belgium",
-          "hg": 2,
-          "ag": 1,
-          "date": "2026-07-11T11:17:59.463Z"
-        },
-        {
-          "home": "Spain",
-          "away": "Belgium",
-          "hg": 2,
-          "ag": 1,
-          "date": "2026-07-11T11:18:19.212Z"
-        },
-        {
-          "home": "Spain",
-          "away": "Belgium",
-          "hg": 2,
-          "ag": 1,
-          "date": "2026-07-11T11:23:00.386Z"
-        },
-        {
-          "home": "Spain",
-          "away": "Belgium",
-          "hg": 2,
-          "ag": 1,
-          "date": "2026-07-11T11:23:30.716Z"
-        },
-        {
-          "home": "Spain",
-          "away": "Belgium",
-          "hg": 2,
-          "ag": 1,
-          "date": "2026-07-11T11:28:00.916Z"
-        },
-        {
-          "home": "Spain",
-          "away": "Belgium",
-          "hg": 2,
-          "ag": 1,
-          "date": "2026-07-11T11:28:20.547Z"
-        },
-        {
-          "home": "Spain",
-          "away": "Belgium",
-          "hg": 2,
-          "ag": 1,
-          "date": "2026-07-11T11:33:03.209Z"
-        },
-        {
-          "home": "Spain",
-          "away": "Belgium",
-          "hg": 2,
-          "ag": 1,
-          "date": "2026-07-11T11:33:32.976Z"
-        },
         {
           "home": "Spain",
           "away": "Belgium",
@@ -75,6 +19,62 @@
           "hg": 2,
           "ag": 1,
           "date": "2026-07-11T11:38:22.814Z"
+        },
+        {
+          "home": "Spain",
+          "away": "Belgium",
+          "hg": 2,
+          "ag": 1,
+          "date": "2026-07-11T11:42:59.779Z"
+        },
+        {
+          "home": "Spain",
+          "away": "Belgium",
+          "hg": 2,
+          "ag": 1,
+          "date": "2026-07-11T11:43:24.890Z"
+        },
+        {
+          "home": "Spain",
+          "away": "Belgium",
+          "hg": 2,
+          "ag": 1,
+          "date": "2026-07-11T11:47:59.603Z"
+        },
+        {
+          "home": "Spain",
+          "away": "Belgium",
+          "hg": 2,
+          "ag": 1,
+          "date": "2026-07-11T11:48:20.325Z"
+        },
+        {
+          "home": "Spain",
+          "away": "Belgium",
+          "hg": 2,
+          "ag": 1,
+          "date": "2026-07-11T11:52:59.802Z"
+        },
+        {
+          "home": "Spain",
+          "away": "Belgium",
+          "hg": 2,
+          "ag": 1,
+          "date": "2026-07-11T11:53:20.786Z"
+        },
+        {
+          "home": "Spain",
+          "away": "Belgium",
+          "hg": 2,
+          "ag": 1,
+          "date": "2026-07-11T11:57:59.831Z"
+        },
+        {
+          "home": "Spain",
+          "away": "Belgium",
+          "hg": 2,
+          "ag": 1,
+          "date": "2026-07-11T11:58:24.035Z"
         }
       ]
     }
