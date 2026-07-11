@@ -415,14 +415,35 @@ function renderTip(t, accaIdx) {
   }
   var valueBadge = t.valueBet ? '<span class="value-badge">🔑 VALUE BET</span>' : '';
   var btn = accaIdx !== undefined ? '<button class="add-acca-btn" id="ab'+accaIdx+'" onclick="toggleAcca('+accaIdx+')">+ Add to Acca</button>' : '';
+  var shareBtn = '<div class="tip-share-row"><button class="share-btn share-wa" onclick="shareTip(\'' + encodeURIComponent(t.match) + '\',\'' + encodeURIComponent(t.pick + ' @ ' + t.odds + ' (' + t.conf + '%)') + '\',\'whatsapp\')">WhatsApp</button><button class="share-btn share-tw" onclick="shareTip(\'' + encodeURIComponent(t.match) + '\',\'' + encodeURIComponent(t.pick + ' @ ' + t.odds + ' (' + t.conf + '%)') + '\',\'twitter\')">Twitter</button><button class="share-btn share-copy" onclick="shareTip(\'' + encodeURIComponent(t.match) + '\',\'' + encodeURIComponent(t.pick + ' @ ' + t.odds + ' (' + t.conf + '%)') + '\',\'copy\')">Copy</button></div>';
   var leagueHtml = t.league ? '<span class="league-chip">'+t.league+'</span>' : '';
   var countryHtml = country ? '<span class="country-chip">'+country+'</span>' : '';
   var mktBadge = '';
   if (t.marketType === 'ou') mktBadge = '<span class="mkt-badge ou">O/U</span>';
   else if (t.marketType === 'btts') mktBadge = '<span class="mkt-badge btts">BTTS</span>';
   else if (t.marketType === 'h2h') mktBadge = '<span class="mkt-badge h2h">1X2</span>';
-  return '<div class="tip-card'+(t.valueBet?' value-card':'')+'" data-type="'+(t.type||'')+'" data-conf="'+t.conf+'"><div class="tip-sport-bar '+sportClass+'"><span>'+icon+' '+(t.sport||'Sport')+'</span>'+countryHtml+leagueHtml+mktBadge+'</div><div class="tip-body"><div class="tip-match">'+t.match+'</div><div class="tip-time">🕐 '+timeStr+'</div><div class="tip-pick"><div><div class="tip-pick-label">'+t.market+'</div><div class="tip-pick-val">'+t.pick+' '+valueBadge+'</div></div>'+oddsHtml+'</div><div class="conf-bar"><div class="conf-fill" style="width:'+t.conf+'%;background:linear-gradient(90deg,'+c+'88,'+c+')"></div></div><div class="tip-footer"><span style="color:'+c+';font-weight:700">★ '+t.conf+'% Confidence</span><span class="tip-status">⏳ Pending</span></div><div class="banker-reason" style="margin-top:10px;font-size:11px;">'+t.reason+'</div>'+btn+'</div></div>';
+  return '<div class="tip-card'+(t.valueBet?' value-card':'')+'" data-type="'+(t.type||'')+'" data-conf="'+t.conf+'"><div class="tip-sport-bar '+sportClass+'"><span>'+icon+' '+(t.sport||'Sport')+'</span>'+countryHtml+leagueHtml+mktBadge+'</div><div class="tip-body"><div class="tip-match">'+t.match+'</div><div class="tip-time">🕐 '+timeStr+'</div><div class="tip-pick"><div><div class="tip-pick-label">'+t.market+'</div><div class="tip-pick-val">'+t.pick+' '+valueBadge+'</div></div>'+oddsHtml+'</div><div class="conf-bar"><div class="conf-fill" style="width:'+t.conf+'%;background:linear-gradient(90deg,'+c+'88,'+c+')"></div></div><div class="tip-footer"><span style="color:'+c+';font-weight:700">★ '+t.conf+'% Confidence</span><span class="tip-status">⏳ Pending</span></div><div class="banker-reason" style="margin-top:10px;font-size:11px;">'+t.reason+'</div>'+btn+shareBtn+'</div></div>';
 }
+function shareTip(matchEnc, pickEnc, platform) {
+  var match = decodeURIComponent(matchEnc);
+  var pick = decodeURIComponent(pickEnc);
+  var text = '🏇⚽ MJK Betting Tips\n\n' + match + '\n' + pick + '\n\n' + window.location.origin;
+  if (platform === 'whatsapp') {
+    window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank');
+  } else if (platform === 'twitter') {
+    window.open('https://twitter.com/intent/tweet?text=' + encodeURIComponent(text.slice(0, 240)), '_blank');
+  } else if (platform === 'copy') {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(function() {
+        var btn = document.querySelector('.share-copy');
+        if (btn) { btn.textContent = 'Copied!'; setTimeout(function() { btn.textContent = 'Copy'; }, 1500); }
+      });
+    } else {
+      var ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+    }
+  }
+}
+
 function renderBanker(b, n) {
   var c = cc(b.conf);
   var timeStr = b.kickoff ? formatTime(b.kickoff) : '';
@@ -449,8 +470,55 @@ function fetchTips() {
     if (data.userTier && data.userTier !== 'free' && currentUser) currentUser.tier = data.userTier;
     populateBankers();
     populateTips();
+    fetchLiveScores();
   }).catch(function() { populateBankers(); populateTips(); });
 }
+
+// === LIVE SCORES ===
+var LIVE_SCORES = {};
+function fetchLiveScores() {
+  apiGet('/api/scores/live').then(function(data) {
+    LIVE_SCORES = data || {};
+    updateLiveScores();
+  }).catch(function() {});
+}
+function updateLiveScores() {
+  var cards = document.querySelectorAll('.tip-card');
+  for (var i = 0; i < cards.length; i++) {
+    var card = cards[i];
+    var match = card.querySelector('.tip-match');
+    var statusEl = card.querySelector('.tip-status');
+    if (!match || !statusEl) continue;
+    var matchText = match.textContent;
+    // Find matching live score
+    for (var key in LIVE_SCORES) {
+      var score = LIVE_SCORES[key];
+      if (matchText.indexOf(score.homeScore) !== -1 || true) { // Match by position
+        // Find the tip data
+        var tipIdx = parseInt(card.getAttribute('data-idx'), 10);
+        var upcoming = ALL_TIPS.filter(function(t){ return !isPast(t.kickoff) && t.conf>=68; });
+        if (upcoming[tipIdx]) {
+          var tip = upcoming[tipIdx];
+          var tipKey = tip.id || (tip.match + tip.pick);
+          if (LIVE_SCORES[tipKey]) {
+            var s = LIVE_SCORES[tipKey];
+            var scoreText = s.homeScore + ' - ' + s.awayScore;
+            if (s.status === 'FT') {
+              statusEl.innerHTML = '✅ ' + scoreText + ' <span style="color:var(--green);font-weight:700">FT</span>';
+              statusEl.style.color = 'var(--green)';
+            } else if (s.status === 'LIVE' || s.status === 'HT' || s.status === 'PAUSED') {
+              var timeInfo = s.elapsed ? ' (' + s.elapsed + ')' : '';
+              statusEl.innerHTML = '🔴 ' + scoreText + ' <span style="color:var(--red);font-weight:700">' + s.status + timeInfo + '</span>';
+              statusEl.style.color = 'var(--red)';
+            }
+          }
+        }
+      }
+    }
+  }
+}
+// Refresh live scores every 60 seconds
+setInterval(function() { if (ALL_TIPS.length > 0) fetchLiveScores(); }, 60000);
 function populateBankers() {
   var el = document.getElementById('tickerStrip');
   if (el) {
@@ -593,25 +661,40 @@ function openSubModal(plan, price, tierKey) {
   m.style.display = 'flex';
   m.classList.add('open');
   document.getElementById('subTitle').textContent = plan + ' Plan — ' + price;
-  document.getElementById('subDesc').textContent = 'Confirm upgrade to the ' + plan + ' plan.';
-  document.getElementById('subWaLink').style.display = 'none';
-  document.getElementById('subConfirmBtn').style.display = 'block';
-  document.getElementById('subConfirmBtn').onclick = function() {
-    document.getElementById('subConfirmBtn').disabled = true;
-    document.getElementById('subConfirmBtn').textContent = 'Processing...';
-    apiPost('/api/subscribe', { tier: tierKey }).then(function(d) {
-      if (d.error) { alert(d.error); document.getElementById('subConfirmBtn').disabled = false; document.getElementById('subConfirmBtn').textContent = 'Subscribe'; return; }
-      currentUser.tier = tierKey;
-      updateAuthUI();
-      checkAdmin();
-      closeSub();
-      showSection('premium');
-      renderPremiumPlans();
-    }).catch(function() {
-      document.getElementById('subConfirmBtn').disabled = false;
-      document.getElementById('subConfirmBtn').textContent = 'Subscribe';
-    });
-  };
+  document.getElementById('subDesc').textContent = 'Choose your payment method to upgrade to ' + plan + '.';
+
+  // Show both PayFast and WhatsApp options
+  var payfastBtn = document.getElementById('subPayfastBtn');
+  var waLink = document.getElementById('subWaLink');
+  if (payfastBtn) {
+    payfastBtn.style.display = 'block';
+    payfastBtn.disabled = false;
+    payfastBtn.textContent = '💳 Pay with PayFast (' + price + ')';
+    payfastBtn.onclick = function() { payWithPayfast(tierKey, payfastBtn); };
+  }
+  if (waLink) {
+    waLink.style.display = 'flex';
+    waLink.href = 'https://wa.me/27677834591?text=' + encodeURIComponent('Hi MJK, I want to upgrade to the ' + plan + ' plan (' + price + '). My username is: ' + currentUser.username);
+    waLink.textContent = '💬 Pay via WhatsApp instead';
+  }
+
+  document.getElementById('subConfirmBtn').style.display = 'none';
+}
+
+function payWithPayfast(tierKey, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'Creating payment...'; }
+  apiPost('/api/pay/create', { tier: tierKey }).then(function(d) {
+    if (d.error) { alert(d.error); if (btn) { btn.disabled = false; btn.textContent = '💳 Pay with PayFast'; } return; }
+    if (d.formHtml) {
+      // Submit form to PayFast
+      var div = document.createElement('div');
+      div.innerHTML = d.formHtml;
+      document.body.appendChild(div);
+    }
+  }).catch(function(e) {
+    alert('Payment error: ' + (e.message || 'Unknown'));
+    if (btn) { btn.disabled = false; btn.textContent = '💳 Pay with PayFast'; }
+  });
 }
 function closeSub() {
   var m = document.getElementById('subModal');

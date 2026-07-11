@@ -7,6 +7,17 @@
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Exo+2:wght@300;400;600;700;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 <link rel="icon" href="logo.jpg" type="image/jpeg">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#00c8ff">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="MJK Tips">
+<link rel="apple-touch-icon" href="logo.jpg">
+<meta name="description" content="South Africa's #1 AI-powered multi-sport betting tips. Free daily tips across soccer, tennis, cricket, horse racing & more.">
+<meta property="og:title" content="MJK Betting Tips">
+<meta property="og:description" content="AI-powered tips · 70%+ confidence · 9 Sports · Free daily updates">
+<meta property="og:image" content="logo.jpg">
+<meta property="og:type" content="website">
 </head>
 <body>
 
@@ -230,13 +241,22 @@
 <div class="modal-overlay" id="subModal" style="display:none;" onclick="if(event.target===this)closeSub()">
   <div class="modal auth-modal">
     <div class="modal-title" id="subTitle">Upgrade Plan</div>
-    <p style="color:var(--muted);font-size:13px;text-align:center;margin-bottom:16px;" id="subDesc">Contact us on WhatsApp to activate.</p>
-    <a class="modal-wa" id="subWaLink" href="#" target="_blank">💬 Chat on WhatsApp</a>
+    <p style="color:var(--muted);font-size:13px;text-align:center;margin-bottom:16px;" id="subDesc">Choose your payment method to upgrade.</p>
+    <button class="btn btn-blue" id="subPayfastBtn" style="width:100%;margin-bottom:8px;display:none;">💳 Pay with PayFast</button>
+    <div style="text-align:center;margin-bottom:8px;color:var(--muted);font-size:11px;">or</div>
+    <a class="modal-wa" id="subWaLink" href="#" target="_blank">💬 Pay via WhatsApp</a>
     <button class="btn btn-blue" id="subConfirmBtn" style="width:100%;margin-bottom:8px;display:none;">Subscribe</button>
     <button class="modal-close" onclick="closeSub()">Close</button>
   </div>
 </div>
 
 <script src="app.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').then(function(r) {
+    console.log('[PWA] Service Worker registered');
+  }).catch(function(e) { console.log('[PWA] SW error:', e); });
+}
+</script>
 </body>
 </html>

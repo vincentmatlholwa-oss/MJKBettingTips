@@ -22,6 +22,12 @@ const TELEGRAM_GROUP_ID = process.env.TELEGRAM_GROUP_ID || '';
 const WHATSAPP_INSTANCE_ID = process.env.WHATSAPP_INSTANCE_ID || '';
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN || '';
 const ADMIN_WHATSAPP = process.env.ADMIN_WHATSAPP || '+27677834591';
+const PAYFAST_MERCHANT_ID = process.env.PAYFAST_MERCHANT_ID || '';
+const PAYFAST_MERCHANT_KEY = process.env.PAYFAST_MERCHANT_KEY || '';
+const PAYFAST_PASSPHRASE = process.env.PAYFAST_PASSPHRASE || '';
+const PAYFAST_SANDBOX = process.env.PAYFAST_SANDBOX === 'true';
+const SITE_URL = process.env.SITE_URL || 'https://mjkbettingtips.onrender.com';
+const PAYFAST_URL = PAYFAST_SANDBOX ? 'https://sandbox.payfast.co.za/eng/process' : 'https://www.payfast.co.za/eng/process';
 
 const RESULTS_FILE = path.join(__dirname, 'data', 'tracked_results.json');
 const ELO_FILE = path.join(__dirname, 'data', 'elo_ratings.json');
@@ -1666,6 +1672,114 @@ app.get('/api/tips', function(req, res) {
   res.json({ lastGenerated: lastGenerated, source: 'live', oddsSource: 'the-odds-api', sports: Object.values(sportsMap), count: tipCount, limit: tier.tipLimit, userTier: userTier, tips: tips, bankers: bankers });
 });
 
+// === LIVE SCORES: Real-time score tracking for active tips ===
+var liveScoreCache = {};
+var liveScoreLastFetch = 0;
+
+async function fetchLiveScores() {
+  var now = Date.now();
+  if (now - liveScoreLastFetch < 60000) return liveScoreCache; // Cache 1 min
+  liveScoreLastFetch = now;
+  var results = {};
+
+  // Get pending soccer tips with active matches (started <2h ago)
+  var activeSoccer = cachedTips.filter(function(t) {
+    if (t.result !== 'pending' || !t.kickoff) return false;
+    var ko = new Date(t.kickoff).getTime();
+    var elapsed = now - ko;
+    return elapsed > 0 && elapsed < 2 * 60 * 60 * 1000 && (t.type === 'soccer_epl' || t.type === 'soccer_fifa_world_cup');
+  });
+
+  if (activeSoccer.length > 0) {
+    try {
+      var dateFrom = new Date(now - 86400000).toISOString().split('T')[0];
+      var dateTo = new Date(now + 86400000).toISOString().split('T')[0];
+      var res = await fetch(FB_API_BASE + '/matches?dateFrom=' + dateFrom + '&dateTo=' + dateTo, { headers: { 'X-Auth-Token': FB_API_KEY } });
+      if (res.ok) {
+        var data = await res.json();
+        if (data.matches) {
+          for (var i = 0; i < activeSoccer.length; i++) {
+            var tip = activeSoccer[i];
+            var parts = tip.match.split(' vs ');
+            var home = parts[0], away = parts[1];
+            var match = data.matches.find(function(m) {
+              return m.status === 'IN_PLAY' || m.status === 'PAUSED' || m.status === 'FINISHED';
+            });
+            // Try to find specific match
+            match = data.matches.find(function(m) {
+              var mh = m.homeTeam ? normalizeTeamName(m.homeTeam.name) : '';
+              var ma = m.awayTeam ? normalizeTeamName(m.awayTeam.name) : '';
+              return mh === normalizeTeamName(home) && ma === normalizeTeamName(away);
+            });
+            if (match && match.score && match.score.fullTime && match.score.fullTime.home !== null) {
+              var status = match.status === 'FINISHED' ? 'FT' : (match.status === 'IN_PLAY' ? 'LIVE' : match.status === 'PAUSED' ? 'HT' : match.status);
+              var elapsed = '';
+              if (match.status === 'IN_PLAY' && match.minute) elapsed = match.minute + "'";
+              results[tip.id || (tip.match + tip.pick)] = {
+                homeScore: match.score.fullTime.home,
+                awayScore: match.score.fullTime.away,
+                status: status,
+                elapsed: elapsed
+              };
+            }
+          }
+        }
+      }
+    } catch (e) {}
+  }
+
+  // Also check the-odds-api for non-soccer live scores
+  var activeOther = cachedTips.filter(function(t) {
+    if (t.result !== 'pending' || !t.kickoff) return false;
+    var ko = new Date(t.kickoff).getTime();
+    var elapsed = now - ko;
+    return elapsed > 0 && elapsed < 4 * 60 * 60 * 1000 && t.type !== 'soccer_epl' && t.type !== 'soccer_fifa_world_cup' && t.type !== 'horse_racing';
+  });
+
+  if (activeOther.length > 0 && ODDS_API_KEY) {
+    try {
+      var typeSet = {};
+      activeOther.forEach(function(t) { typeSet[t.type] = true; });
+      for (var sportKey in typeSet) {
+        var res2 = await fetch(ODDS_API_BASE + '/sports/' + sportKey + '/scores?apiKey=' + ODDS_API_KEY + '&daysFrom=1');
+        if (res2.ok) {
+          var scores = await res2.json();
+          if (scores) {
+            for (var i = 0; i < activeOther.length; i++) {
+              var tip = activeOther[i];
+              if (tip.type !== sportKey) continue;
+              var parts = tip.match.split(' vs ');
+              var match = scores.find(function(s) {
+                return normalizeTeamName(s.home_team) === normalizeTeamName(parts[0]) && normalizeTeamName(s.away_team) === normalizeTeamName(parts[1]);
+              });
+              if (match && match.scores && match.scores.length >= 2) {
+                results[tip.id || (tip.match + tip.pick)] = {
+                  homeScore: parseInt(match.scores[0].score, 10),
+                  awayScore: parseInt(match.scores[1].score, 10),
+                  status: match.completed ? 'FT' : 'LIVE',
+                  elapsed: ''
+                };
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {}
+  }
+
+  liveScoreCache = results;
+  return results;
+}
+
+app.get('/api/scores/live', async function(req, res) {
+  try {
+    var scores = await fetchLiveScores();
+    res.json(scores);
+  } catch (e) {
+    res.json({});
+  }
+});
+
 // Premium: Bankers-only feed
 app.get('/api/premium/bankers', authMiddleware, function(req, res) {
   var users = loadUsers(); var user = users[req.user.username];
@@ -2064,6 +2178,141 @@ function scheduleDailyBroadcast() {
     setInterval(sendDailyBroadcast, 86400000);
   }, delay);
 }
+
+// === PAYFAST PAYMENT GATEWAY ===
+var PAYFAST_SUBS_FILE = path.join(__dirname, 'data', 'payfast_subscriptions.json');
+function loadPayfastSubs() { return loadJSON(PAYFAST_SUBS_FILE, {}); }
+function savePayfastSubs(s) { saveJSON(PAYFAST_SUBS_FILE, s); }
+
+function generatePayFastSignature(params, passphrase) {
+  var str = '';
+  var keys = Object.keys(params);
+  for (var i = 0; i < keys.length; i++) {
+    if (params[keys[i]] !== '') str += keys[i] + '=' + encodeURIComponent(params[keys[i]]).replace(/%20/g, '+') + '&';
+  }
+  str = str.slice(0, -1);
+  if (passphrase) str += '&passphrase=' + encodeURIComponent(passphrase);
+  return crypto.createHash('md5').update(str).digest('hex');
+}
+
+// PayFast subscription prices (ZAR)
+var PF_PRICES = { starter: 700, pro: 2500, elite: 6570 };
+var PF_NAMES = { starter: 'MJK Starter Plan', pro: 'MJK Pro Plan', elite: 'MJK Elite Plan' };
+
+app.post('/api/pay/create', authMiddleware, async function(req, res) {
+  if (!PAYFAST_MERCHANT_ID || !PAYFAST_MERCHANT_KEY) return res.status(500).json({ error: 'PayFast not configured' });
+  var tier = req.body.tier;
+  if (!PF_PRICES[tier]) return res.status(400).json({ error: 'Invalid tier' });
+  var username = req.user.username;
+  var amount = PF_PRICES[tier];
+
+  var params = {
+    'merchant_id': PAYFAST_MERCHANT_ID,
+    'merchant_key': PAYFAST_MERCHANT_KEY,
+    'return_url': SITE_URL + '/?payment=success&tier=' + tier,
+    'cancel_url': SITE_URL + '/?payment=cancelled',
+    'notify_url': SITE_URL + '/api/pay/itn',
+    'name_first': username,
+    'email_address': username + '@mjk.local',
+    'm_payment_id': username + '-' + tier + '-' + Date.now(),
+    'amount': amount.toFixed(2),
+    'item_name': PF_NAMES[tier],
+    'item_description': 'MJK Betting Tips - ' + tier.charAt(0).toUpperCase() + tier.slice(1) + ' Plan (monthly)',
+    'subscription_type': '1',
+    'frequency': '3',
+    'recurring_amount': amount.toFixed(2),
+    'cycles': '0'
+  };
+
+  if (PAYFAST_PASSPHRASE) params.passphrase = PAYFAST_PASSPHRASE;
+  params.signature = generatePayFastSignature(params, PAYFAST_PASSPHRASE);
+
+  // Store pending payment
+  var subs = loadPayfastSubs();
+  subs[params.m_payment_id] = { username: username, tier: tier, amount: amount, status: 'pending', createdAt: new Date().toISOString() };
+  savePayfastSubs(subs);
+
+  var formHtml = '<form method="post" action="' + PAYFAST_URL + '" id="pfForm">';
+  for (var key in params) {
+    formHtml += '<input type="hidden" name="' + key + '" value="' + String(params[key]).replace(/"/g, '&quot;') + '">';
+  }
+  formHtml += '</form><script>document.getElementById("pfForm").submit();</script>';
+
+  res.json({ redirect: true, formHtml: formHtml, paymentUrl: PAYFAST_URL, params: params });
+});
+
+// PayFast ITN (Instant Transaction Notification) endpoint
+app.post('/api/pay/itn', express.urlencoded({ extended: true }), async function(req, res) {
+  try {
+    var data = req.body;
+    console.log('[PAYFAST] ITN received:', data.m_payment_id, data.payment_status);
+
+    // Verify signature
+    var verifyParams = {};
+    var keys = Object.keys(data);
+    for (var i = 0; i < keys.length; i++) {
+      if (keys[i] !== 'signature' && data[keys[i]] !== '') verifyParams[keys[i]] = data[keys[i]];
+    }
+    var expectedSig = generatePayFastSignature(verifyParams, PAYFAST_PASSPHRASE);
+
+    if (expectedSig !== data.signature) {
+      console.log('[PAYFAST] Invalid signature');
+      return res.send('Invalid signature');
+    }
+
+    // Verify with PayFast (optional extra security)
+    // For now, trust the ITN
+
+    var paymentId = data.m_payment_id;
+    var status = data.payment_status; // COMPLETE, FAILED, PENDING
+    var subs = loadPayfastSubs();
+
+    if (subs[paymentId]) {
+      subs[paymentId].status = status.toLowerCase();
+      subs[paymentId].itnAt = new Date().toISOString();
+      subs[paymentId].pfPaymentId = data.pf_payment_id;
+      savePayfastSubs(subs);
+
+      // If payment is COMPLETE, upgrade user
+      if (status === 'COMPLETE') {
+        var sub = subs[paymentId];
+        var users = loadUsers();
+        if (users[sub.username]) {
+          users[sub.username].tier = sub.tier;
+          users[sub.username].subscribedAt = new Date().toISOString();
+          users[sub.username].payfastPaymentId = paymentId;
+          saveUsers(users);
+          console.log('[PAYFAST] Upgraded ' + sub.username + ' to ' + sub.tier);
+        }
+      }
+    }
+
+    res.send('OK');
+  } catch (e) {
+    console.log('[PAYFAST] ITN error:', e.message);
+    res.send('OK'); // Always return OK to PayFast
+  }
+});
+
+// Check payment status
+app.get('/api/pay/status/:paymentId', authMiddleware, function(req, res) {
+  var subs = loadPayfastSubs();
+  var sub = subs[req.params.paymentId];
+  if (!sub || sub.username !== req.user.username) return res.status(404).json({ error: 'Not found' });
+  res.json({ status: sub.status, tier: sub.tier, amount: sub.amount });
+});
+
+// === ADMIN PAYFAST ===
+app.post('/api/admin/payfast-config', authMiddleware, adminMiddleware, function(req, res) {
+  var config = {
+    merchantId: PAYFAST_MERCHANT_ID,
+    merchantKey: PAYFAST_MERCHANT_KEY,
+    passphrase: PAYFAST_PASSPHRASE ? '***set***' : '',
+    sandbox: PAYFAST_SANDBOX,
+    url: PAYFAST_URL
+  };
+  res.json(config);
+});
 
 app.post('/api/admin/broadcast', authMiddleware, adminMiddleware, function(req, res) {
   sendDailyBroadcast().then(function() { res.json({ success: true, message: 'Daily broadcast sent to admin via WhatsApp + Telegram' }); }).catch(function(e) { res.status(500).json({ error: e.message }); });

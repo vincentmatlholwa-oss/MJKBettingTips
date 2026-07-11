@@ -191,6 +191,16 @@ section{position:relative;z-index:1;}
 .modal-wa{display:flex;align-items:center;justify-content:center;gap:8px;background:rgba(37,211,102,.12);border:1px solid rgba(37,211,102,.3);border-radius:10px;padding:12px;margin-bottom:14px;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:14px;color:#25d366;cursor:pointer;text-decoration:none;}
 .modal-close{background:none;border:none;color:var(--muted);font-size:12px;cursor:pointer;margin-top:10px;text-decoration:underline;}
 
+.tip-share-row{display:flex;gap:6px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);}
+.share-btn{flex:1;padding:6px 4px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.5px;cursor:pointer;transition:all .2s;text-align:center;}
+.share-btn:hover{transform:translateY(-1px);}
+.share-wa{border-color:rgba(37,211,102,.3);color:#25d366;}
+.share-wa:hover{background:rgba(37,211,102,.12);}
+.share-tw{border-color:rgba(29,155,240,.3);color:#1d9bf0;}
+.share-tw:hover{background:rgba(29,155,240,.12);}
+.share-copy{border-color:rgba(0,200,255,.3);color:var(--cyan);}
+.share-copy:hover{background:rgba(0,200,255,.12);}
+
 footer{text-align:center;padding:36px 20px;color:var(--muted);font-size:12px;border-top:1px solid var(--border);line-height:2;}
 footer .footer-logo{width:90px;opacity:.7;margin-bottom:10px;filter:drop-shadow(0 0 10px rgba(0,200,255,.3));}
 footer strong{color:var(--cyan);}

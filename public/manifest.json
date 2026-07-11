@@ -1,0 +1,17 @@
+{
+  "name": "MJK Betting Tips",
+  "short_name": "MJK Tips",
+  "description": "South Africa's #1 AI-powered multi-sport betting tips",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0f",
+  "theme_color": "#00c8ff",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "logo.jpg", "sizes": "192x192", "type": "image/jpeg", "purpose": "any maskable" },
+    { "src": "logo.jpg", "sizes": "512x512", "type": "image/jpeg", "purpose": "any" }
+  ],
+  "categories": ["sports", "entertainment"],
+  "lang": "en",
+  "dir": "ltr"
+}

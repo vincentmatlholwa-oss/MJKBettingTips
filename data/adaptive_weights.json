@@ -1,9 +1,9 @@
 {
   "soccer_fifa_world_cup": {
-    "eloWeight": 0.33468725419490564,
-    "poissonWeight": 0.31418555003841137,
-    "marketWeight": 0.351127195766683,
-    "samples": 34
+    "eloWeight": 0.3598637614927535,
+    "poissonWeight": 0.2712957784624276,
+    "marketWeight": 0.36884046004481896,
+    "samples": 59
   },
   "soccer_epl": {
     "eloWeight": 0.25,
