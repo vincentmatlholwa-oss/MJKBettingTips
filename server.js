@@ -18,10 +18,9 @@ const FB_API_BASE = 'https://api.football-data.org/v4';
 const ODDS_API_KEY = process.env.ODDS_API_KEY || '';
 const ODDS_API_BASE = 'https://api.the-odds-api.com/v4';
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
-const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID || '';
-const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || '';
-const TWILIO_WHATSAPP_FROM = process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886';
-const ADMIN_WHATSAPP = process.env.ADMIN_WHATSAPP || 'whatsapp:+27677834591';
+const WHATSAPP_INSTANCE_ID = process.env.WHATSAPP_INSTANCE_ID || '';
+const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN || '';
+const ADMIN_WHATSAPP = process.env.ADMIN_WHATSAPP || '+27677834591';
 
 const RESULTS_FILE = path.join(__dirname, 'data', 'tracked_results.json');
 const ELO_FILE = path.join(__dirname, 'data', 'elo_ratings.json');
@@ -1676,20 +1675,16 @@ function formatTipsForWhatsApp(tips) {
 }
 
 async function sendWhatsAppMessage(to, body) {
-  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) { console.log('[WHATSAPP] Twilio not configured — skipping'); return false; }
+  if (!WHATSAPP_INSTANCE_ID || !WHATSAPP_TOKEN) { console.log('[WHATSAPP] UltraMsg not configured — skipping'); return false; }
   try {
-    var params = new URLSearchParams();
-    params.append('From', TWILIO_WHATSAPP_FROM);
-    params.append('To', to);
-    params.append('Body', body);
-    var res = await fetch('https://api.twilio.com/2010-04-01/Accounts/' + TWILIO_ACCOUNT_SID + '/Messages.json', {
+    var res = await fetch('https://api.ultramsg.com/' + WHATSAPP_INSTANCE_ID + '/messages/chat', {
       method: 'POST',
-      headers: { 'Authorization': 'Basic ' + Buffer.from(TWILIO_ACCOUNT_SID + ':' + TWILIO_AUTH_TOKEN).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: params.toString()
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: WHATSAPP_TOKEN, to: to, body: body })
     });
     var data = await res.json();
-    if (res.ok) { console.log('[WHATSAPP] Sent to ' + to + ' (sid: ' + data.sid + ')'); return true; }
-    else { console.log('[WHATSAPP] Failed: ' + (data.message || res.status)); return false; }
+    if (data.sent === true || data.messageId) { console.log('[WHATSAPP] Sent to ' + to + ' (id: ' + (data.messageId || 'ok') + ')'); return true; }
+    else { console.log('[WHATSAPP] Failed: ' + JSON.stringify(data).slice(0, 200)); return false; }
   } catch (e) { console.log('[WHATSAPP] Error: ' + (e.message || e)); return false; }
 }
 
@@ -1757,8 +1752,8 @@ setInterval(function() { loadTrackedTips(); checkSportHealth(); }, 1800000);
 app.listen(port, function() {
   console.log('MJK Betting Tips v9 (Advanced AI + Telegram + WhatsApp Daily Broadcast) running on http://localhost:' + port);
   if (TELEGRAM_BOT_TOKEN) console.log('[TELEGRAM] Bot enabled (long-polling mode)');
-  if (TWILIO_ACCOUNT_SID) console.log('[WHATSAPP] Twilio enabled — daily broadcast to ' + ADMIN_WHATSAPP);
-  else console.log('[WHATSAPP] Twilio not configured — add TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN to .env');
+  if (WHATSAPP_INSTANCE_ID) console.log('[WHATSAPP] UltraMsg enabled — daily broadcast to ' + ADMIN_WHATSAPP);
+  else console.log('[WHATSAPP] UltraMsg not configured — add WHATSAPP_INSTANCE_ID + WHATSAPP_TOKEN to .env');
   console.log('[AUTH] Admin login: ' + ADMIN_USER + ' / ' + ADMIN_PASS);
   console.log('[AI] Dixon-Coles Poisson, logistic regression, per-sport config, team stats, H2H, fatigue tracking loaded');
   startTelegramBot();
