@@ -18,6 +18,7 @@ const FB_API_BASE = 'https://api.football-data.org/v4';
 const ODDS_API_KEY = process.env.ODDS_API_KEY || '';
 const ODDS_API_BASE = 'https://api.the-odds-api.com/v4';
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
+const TELEGRAM_GROUP_ID = process.env.TELEGRAM_GROUP_ID || '';
 const WHATSAPP_INSTANCE_ID = process.env.WHATSAPP_INSTANCE_ID || '';
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN || '';
 const ADMIN_WHATSAPP = process.env.ADMIN_WHATSAPP || '+27677834591';
@@ -1154,18 +1155,22 @@ async function handleTelegramMessage(msg) {
 
   // /tips
   if (text === '/tips' || text === '/tips@mjk_bettingtips_bot' || text === 'tips' || text === "today's tips" || text === 'today') {
-    var tips = upcomingTips(cachedTips, 10);
+    var isGroup = chatId < 0;
+    var tips = upcomingTips(cachedTips, isGroup ? TIERS.free.tipLimit : 10);
+    if (isGroup) tips = tips.filter(function(t) { return t.type !== 'horse_racing'; });
     if (tips.length === 0) { await sendTelegram(chatId, 'No upcoming tips right now. Check back later!'); return; }
-    var msg = '<b>MJK Tips — Top 10</b>\n\n';
+    var msg = '<b>MJK Tips — ' + (isGroup ? 'Free ' + tips.length : 'Top ' + tips.length) + '</b>\n\n';
     tips.forEach(function(t, i) { msg += formatTip(t, i + 1) + '\n\n'; });
-    msg += 'Confidence min 70% | AI-powered predictions';
+    if (!isGroup) msg += 'Confidence min 70% | AI-powered predictions';
+    else msg += 'Upgrade to Pro/Elite for full access';
     await sendTelegram(chatId, msg);
     return;
   }
 
   // /bankers
   if (text === '/bankers' || text === '/bankers@mjk_bettingtips_bot' || text === 'bankers') {
-    var bankers = upcomingTips(cachedTips.filter(function(t) { return t.conf >= 80; }), 10);
+    var isGroup = chatId < 0;
+    var bankers = upcomingTips(cachedTips.filter(function(t) { return t.conf >= 80 && (isGroup ? t.type !== 'horse_racing' : true); }), isGroup ? 3 : 10);
     if (bankers.length === 0) { await sendTelegram(chatId, 'No bankers (80%+) available right now.'); return; }
     var msg = '<b>MJK Bankers — Highest Confidence</b>\n\n';
     bankers.forEach(function(t, i) { msg += formatTip(t, i + 1) + '\n\n'; });
@@ -1176,16 +1181,19 @@ async function handleTelegramMessage(msg) {
 
   // /all
   if (text === '/all' || text === '/all@mjk_bettingtips_bot' || text === 'all tips') {
-    var tips = upcomingTips(cachedTips, 50);
+    var isGroup = chatId < 0;
+    var tips = upcomingTips(cachedTips, isGroup ? TIERS.free.tipLimit : 50);
+    if (isGroup) tips = tips.filter(function(t) { return t.type !== 'horse_racing'; });
     if (tips.length === 0) { await sendTelegram(chatId, 'No upcoming tips right now.'); return; }
     var bySport = {};
     tips.forEach(function(t) { if (!bySport[t.sport]) bySport[t.sport] = []; bySport[t.sport].push(t); });
-    var msg = '<b>MJK All Tips (' + tips.length + ')</b>\n\n';
+    var msg = '<b>MJK ' + (isGroup ? 'Free ' : '') + 'Tips (' + tips.length + ')</b>\n\n';
     for (var sport in bySport) {
       msg += '<b>' + bySport[sport][0].icon + ' ' + sport + '</b>\n';
       bySport[sport].forEach(function(t, i) { msg += formatTip(t, i + 1) + '\n'; });
       msg += '\n';
     }
+    if (isGroup) msg += 'Upgrade for full access — mjkbettingtips.com';
     await sendTelegram(chatId, msg);
     return;
   }
@@ -1634,6 +1642,38 @@ app.post('/api/subscribe', authMiddleware, function(req, res) {
 
 const ADMIN_PHONE = '27677834591';
 
+function formatTelegramGroupMsg(tips) {
+  var now = new Date();
+  var dateStr = now.toLocaleDateString('en-ZA', { timeZone: 'Africa/Johannesburg', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  var msg = '<b>MJK Betting Tips — ' + dateStr + '</b>\n\n';
+  var seen = {};
+  var count = 0;
+  for (var i = 0; i < tips.length; i++) {
+    var t = tips[i];
+    if (seen[t.type]) continue;
+    seen[t.type] = true;
+    count++;
+    var kickoff = t.kickoff ? new Date(t.kickoff).toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg', hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' }) : 'TBD';
+    msg += t.icon + ' <b>' + t.match + '</b>\n';
+    msg += '   ' + t.pick + ' @ <b>' + t.odds + '</b> (' + t.conf + '%)\n';
+    msg += '   ' + t.market + ' · ' + kickoff + (t.valueBet ? ' · VALUE' : '') + '\n\n';
+  }
+  var highConf = tips.filter(function(t) { return t.conf >= 80; });
+  if (highConf.length > 0) {
+    msg += '<b>BANKERS (80%+):</b>\n';
+    var bs = {};
+    for (var i = 0; i < highConf.length && Object.keys(bs).length < 3; i++) {
+      var b = highConf[i];
+      if (bs[b.type]) continue;
+      bs[b.type] = true;
+      msg += '⭐ ' + b.match + '\n   ' + b.pick + ' @ ' + b.odds + ' (' + b.conf + '%)\n';
+    }
+    msg += '\n';
+  }
+  msg += 'Free tips · AI-powered · 65%+ confidence\nUpgrade to Pro/Elite for full access — /tips for more';
+  return msg;
+}
+
 function formatTipsForWhatsApp(tips) {
   var now = new Date();
   var dateStr = now.toLocaleDateString('en-ZA', { timeZone: 'Africa/Johannesburg', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
@@ -1701,6 +1741,14 @@ async function sendDailyBroadcast() {
     var adminSubs = loadTelegramSubs();
     for (var i = 0; i < adminSubs.length; i++) {
       await sendTelegram(adminSubs[i].chatId, plainMsg);
+    }
+  }
+  if (TELEGRAM_GROUP_ID && TELEGRAM_BOT_TOKEN) {
+    var freeTips = upcoming.filter(function(t) { return t.type !== 'horse_racing'; }).slice(0, TIERS.free.tipLimit);
+    if (freeTips.length > 0) {
+      var groupMsg = formatTelegramGroupMsg(freeTips);
+      await sendTelegram(TELEGRAM_GROUP_ID, groupMsg);
+      console.log('[BROADCAST] Sent ' + freeTips.length + ' free tips to Telegram group ' + TELEGRAM_GROUP_ID);
     }
   }
   var waUrl = 'https://wa.me/' + ADMIN_PHONE + '?text=' + encodeURIComponent(plainMsg);
