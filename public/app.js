@@ -353,22 +353,6 @@ function dismissPushPrompt() {
   localStorage.setItem('mjk_push_dismissed', '1');
 }
 
-// === EMAIL DIGEST ===
-function subscribeEmailDigest() {
-  var email = document.getElementById('digestEmail').value.trim();
-  var err = document.getElementById('digestError');
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    err.textContent = 'Please enter a valid email address.';
-    return;
-  }
-  err.textContent = '';
-  apiPost('/api/email/subscribe', { email: email }).then(function(d) {
-    if (d.error) { err.textContent = d.error; return; }
-    showToast('Subscribed to daily digest!', 'success');
-    document.getElementById('emailModal').style.display = 'none';
-  }).catch(function() { err.textContent = 'Network error'; });
-}
-
 // === TIERS ===
 function loadTiers() {
   if (!currentUser) return;

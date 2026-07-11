@@ -342,7 +342,6 @@
     <span style="font-size:11px;">Tips updated daily · 70%+ confidence minimum · 18+ · Gamble responsibly</span><br>
     <div class="footer-links">
       <a href="#" onclick="showRealityCheck()">⏰ Session Timer</a>
-      <a href="#" onclick="document.getElementById('emailModal').style.display='flex'">📧 Email Digest</a>
       <a href="https://www.ngb.org.za" target="_blank" rel="noopener">Responsible Gambling</a>
       <a href="#" onclick="showSection('tips')">Home</a>
     </div>
@@ -420,19 +419,7 @@
   </div>
 </div>
 
-<!-- EMAIL DIGEST MODAL -->
-<div class="modal-overlay" id="emailModal" role="dialog" aria-modal="true" style="display:none;" onclick="if(event.target===this)this.style.display='none'">
-  <div class="modal auth-modal">
-    <div class="modal-title">📧 Daily Email Digest</div>
-    <p style="color:var(--muted);font-size:13px;text-align:center;margin-bottom:16px;">Get today's top tips delivered to your inbox every morning at 6am SAST.</p>
-    <div class="auth-form">
-      <input type="email" id="digestEmail" placeholder="your@email.com" class="auth-input" autocomplete="email">
-      <div class="auth-error" id="digestError" role="alert"></div>
-      <button class="btn btn-blue" onclick="subscribeEmailDigest()">Subscribe Free</button>
-      <button class="modal-close" onclick="document.getElementById('emailModal').style.display='none'">Close</button>
-    </div>
-  </div>
-</div>
+
 
 <script src="app.js"></script>
 <script>

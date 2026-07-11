@@ -45,7 +45,6 @@ const RACING_EVENTS_FILE = path.join(__dirname, 'data', 'racing_events.json');
 const TG_WARNINGS_FILE = path.join(__dirname, 'data', 'tg_warnings.json');
 const TG_LAST_PROMO_FILE = path.join(__dirname, 'data', 'tg_last_promo.json');
 const PUSH_SUBS_FILE = path.join(__dirname, 'data', 'push_subscriptions.json');
-const EMAIL_DIGEST_FILE = path.join(__dirname, 'data', 'email_digests.json');
 
 const HORSE_RACING_API_KEY = process.env.HORSE_RACING_API_KEY || ''; // Reserved for future paid API
 const HORSE_RACING_API_BASE = 'https://api.odds-api.net/v1';
@@ -196,8 +195,6 @@ setInterval(function() {
 // === PUSH NOTIFICATIONS ===
 function loadPushSubs() { return loadJSON(PUSH_SUBS_FILE, []); }
 function savePushSubs(s) { saveJSON(PUSH_SUBS_FILE, s); }
-function loadEmailDigests() { return loadJSON(EMAIL_DIGEST_FILE, []); }
-function saveEmailDigests(e) { saveJSON(EMAIL_DIGEST_FILE, e); }
 
 async function sendPushNotification(subscription, title, body, url) {
   try {
@@ -2345,26 +2342,6 @@ app.get('/api/push/pending', authMiddleware, function(req, res) {
   var pending = loadJSON(pendingFile, []);
   saveJSON(pendingFile, []);
   res.json({ notifications: pending });
-});
-
-// === EMAIL DIGEST ===
-app.post('/api/email/subscribe', rateLimit(60 * 1000, 3), function(req, res) {
-  var email = (req.body.email || '').trim().toLowerCase();
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Valid email required' });
-  var digests = loadEmailDigests();
-  var exists = digests.find(function(d) { return d.email === email; });
-  if (!exists) {
-    digests.push({ email: email, subscribedAt: new Date().toISOString(), active: true });
-    saveEmailDigests(digests);
-  }
-  res.json({ success: true, message: 'Subscribed to daily tip digest!' });
-});
-app.post('/api/email/unsubscribe', function(req, res) {
-  var email = (req.body.email || '').trim().toLowerCase();
-  var digests = loadEmailDigests();
-  digests = digests.filter(function(d) { return d.email !== email; });
-  saveEmailDigests(digests);
-  res.json({ success: true });
 });
 
 // === LIVE ODDS COMPARISON ===
