@@ -1,17 +1,17 @@
 {
   "soccer_fifa_world_cup": {
     "Spain": {
-      "gf": 66,
-      "ga": 33,
-      "matches": 33,
-      "homeGf": 66,
-      "homeGa": 33,
-      "homeMatches": 33
+      "gf": 70,
+      "ga": 35,
+      "matches": 35,
+      "homeGf": 70,
+      "homeGa": 35,
+      "homeMatches": 35
     },
     "Belgium": {
-      "gf": 33,
-      "ga": 66,
-      "matches": 33,
+      "gf": 35,
+      "ga": 70,
+      "matches": 35,
       "homeGf": 0,
       "homeGa": 0,
       "homeMatches": 0

@@ -1,25 +1,11 @@
 {
   "soccer_fifa_world_cup": {
     "Belgium|Spain": {
-      "homeWins": 33,
+      "homeWins": 35,
       "awayWins": 0,
       "draws": 0,
-      "total": 33,
+      "total": 35,
       "lastResults": [
-        {
-          "home": "Spain",
-          "away": "Belgium",
-          "hg": 2,
-          "ag": 1,
-          "date": "2026-07-11T09:12:59.528Z"
-        },
-        {
-          "home": "Spain",
-          "away": "Belgium",
-          "hg": 2,
-          "ag": 1,
-          "date": "2026-07-11T09:13:24.258Z"
-        },
         {
           "home": "Spain",
           "away": "Belgium",
@@ -75,6 +61,20 @@
           "hg": 2,
           "ag": 1,
           "date": "2026-07-11T09:33:18.874Z"
+        },
+        {
+          "home": "Spain",
+          "away": "Belgium",
+          "hg": 2,
+          "ag": 1,
+          "date": "2026-07-11T09:37:59.497Z"
+        },
+        {
+          "home": "Spain",
+          "away": "Belgium",
+          "hg": 2,
+          "ag": 1,
+          "date": "2026-07-11T09:38:19.078Z"
         }
       ]
     }
