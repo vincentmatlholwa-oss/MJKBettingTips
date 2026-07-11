@@ -5,13 +5,27 @@ const fs = require('fs');
 const crypto = require('crypto');
 const fetch = require('node-fetch');
 const jwt = require('jsonwebtoken');
+const webpush = require('web-push');
+const compression = require('compression');
 
 const app = express();
+app.use(compression());
 app.use(express.json());
 const port = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'mjk-secret-' + require('crypto').randomBytes(16).toString('hex');
 const ADMIN_USER = process.env.ADMIN_USER || 'admin';
 const ADMIN_PASS = process.env.ADMIN_PASS || 'admin123';
+
+// VAPID keys for Web Push
+const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || 'BAG7sHqLzcMVKLy7djmbvZv_c51035-_YrBPujsBQkDEh4svYCTTYkPIruG1T0RstmV2Kjk4o83kPzy5YLN8dhM';
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || '6rIqNH9ewGspl19PmUq1ZNlG-RWH2Qf6V1NytaCmLTk';
+const VAPID_EMAIL = 'mailto:admin@mjkbettingtips.com';
+if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
+  webpush.setVapidDetails(VAPID_EMAIL, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+}
+
+// Serve VAPID public key to frontend
+app.get('/api/vapid-key', function(req, res) { res.json({ key: VAPID_PUBLIC_KEY }); });
 
 const FB_API_KEY = process.env.FOOTBALL_DATA_API_KEY || '';
 const FB_API_BASE = 'https://api.football-data.org/v4';
@@ -199,12 +213,28 @@ function savePushSubs(s) { saveJSON(PUSH_SUBS_FILE, s); }
 async function sendPushNotification(subscription, title, body, url) {
   try {
     var payload = JSON.stringify({ title: title, body: body, url: url || '/' });
-    var endpoint = subscription.endpoint;
-    var keys = subscription.keys;
-    // Use Web Push Protocol via fetch
-    // For simplicity, store pending notifications for polling
+    await webpush.sendNotification(subscription, payload);
     return true;
-  } catch (e) { return false; }
+  } catch (e) {
+    if (e.statusCode === 410 || e.statusCode === 404) return false; // subscription expired
+    console.log('[PUSH] Send error:', e.message);
+    return false;
+  }
+}
+
+async function sendPushToAll(title, body, url) {
+  var subs = loadPushSubs();
+  var failed = [];
+  for (var i = 0; i < subs.length; i++) {
+    var ok = await sendPushNotification(subs[i], title, body, url);
+    if (!ok) failed.push(i);
+  }
+  if (failed.length > 0) {
+    var fresh = subs.filter(function(_, idx) { return failed.indexOf(idx) === -1; });
+    savePushSubs(fresh);
+    console.log('[PUSH] Removed ' + failed.length + ' expired subscriptions');
+  }
+  return subs.length - failed.length;
 }
 
 // === LIVE ODDS ===
@@ -1029,17 +1059,12 @@ async function refreshTips() {
   try {
     var highConfTips = cachedTips.filter(function(t) { return t.conf >= 80; });
     if (highConfTips.length > 0) {
-      var pendingFile = path.join(__dirname, 'data', 'push_pending.json');
-      var pending = loadJSON(pendingFile, []);
-      pending.push({
-        title: 'MJK Tips — ' + highConfTips.length + ' New High-Confidence Picks!',
-        body: highConfTips.slice(0, 3).map(function(t) { return t.pick + ' (' + t.conf + '%)'; }).join(', '),
-        url: '/',
-        timestamp: Date.now()
-      });
-      saveJSON(pendingFile, pending);
+      var title = 'MJK Tips — ' + highConfTips.length + ' New High-Confidence Picks!';
+      var body = highConfTips.slice(0, 3).map(function(t) { return t.pick + ' (' + t.conf + '%)'; }).join(', ');
+      var sent = await sendPushToAll(title, body, '/');
+      console.log('[PUSH] Sent to ' + sent + ' subscribers');
     }
-  } catch (e) { console.log('[PUSH] Error queuing notification:', e.message); }
+  } catch (e) { console.log('[PUSH] Error sending notification:', e.message); }
   var staleCount = trackedTips.filter(function(t) { return t.result === 'pending' && t.kickoff && new Date(t.kickoff).getTime() < Date.now() - 3 * 86400000; }).length;
   if (staleCount > 0) {
     trackedTips = trackedTips.filter(function(t) { return !(t.result === 'pending' && t.kickoff && new Date(t.kickoff).getTime() < Date.now() - 3 * 86400000); });
@@ -1684,7 +1709,7 @@ app.get('/api/auth/me', authMiddleware, function(req, res) {
 
 // Admin endpoints
 // Tips (with tier-based limits)
-app.get('/api/tips', function(req, res) {
+app.get('/api/tips', rateLimit(30000, 30), function(req, res) {
   var tipCount = cachedTips.length;
   var tips = cachedTips;
   var header = req.headers.authorization;
@@ -1941,7 +1966,7 @@ app.get('/api/v1/tips', function(req, res) {
 });
 
 // Existing endpoints
-app.get('/api/stats', function(req, res) {
+app.get('/api/stats', rateLimit(60000, 15), function(req, res) {
   loadTrackedTips(); loadCalibration();
   var bySport = {};
   for (var i = 0; i < trackedTips.length; i++) {
@@ -1967,7 +1992,7 @@ app.get('/api/weights', function(req, res) {
   res.json(out);
 });
 
-app.get('/api/history', function(req, res) {
+app.get('/api/history', rateLimit(60000, 15), function(req, res) {
   loadTrackedTips();
   var completed = trackedTips.filter(function(t) { return t.result === 'won' || t.result === 'lost'; }).sort(function(a, b) { return (b.kickoff || '').localeCompare(a.kickoff || ''); });
   res.json({ count: completed.length, tips: completed.slice(0, 100) });
@@ -2322,10 +2347,10 @@ app.post('/api/push/subscribe', rateLimit(60 * 1000, 5), function(req, res) {
   var sub = req.body;
   if (!sub || !sub.endpoint) return res.status(400).json({ error: 'Invalid subscription' });
   var subs = loadPushSubs();
-  // Dedupe by endpoint
   var exists = subs.findIndex(function(s) { return s.endpoint === sub.endpoint; });
   if (exists >= 0) subs[exists] = sub; else subs.push(sub);
   savePushSubs(subs);
+  console.log('[PUSH] New subscription (' + subs.length + ' total)');
   res.json({ success: true, total: subs.length });
 });
 app.post('/api/push/unsubscribe', function(req, res) {
@@ -2335,13 +2360,6 @@ app.post('/api/push/unsubscribe', function(req, res) {
   subs = subs.filter(function(s) { return s.endpoint !== endpoint; });
   savePushSubs(subs);
   res.json({ success: true });
-});
-app.get('/api/push/pending', authMiddleware, function(req, res) {
-  // Poll for pending notifications (returns + clears)
-  var pendingFile = path.join(__dirname, 'data', 'push_pending.json');
-  var pending = loadJSON(pendingFile, []);
-  saveJSON(pendingFile, []);
-  res.json({ notifications: pending });
 });
 
 // === LIVE ODDS COMPARISON ===
@@ -2360,15 +2378,31 @@ app.get('/api/odds/compare/:sport', async function(req, res) {
 app.post('/api/admin/push-broadcast', authMiddleware, adminMiddleware, async function(req, res) {
   var title = req.body.title || 'MJK Betting Tips — New Tips!';
   var body = req.body.body || 'Check out today\'s AI-powered tips.';
-  var pendingFile = path.join(__dirname, 'data', 'push_pending.json');
-  var pending = loadJSON(pendingFile, []);
-  var notification = { title: title, body: body, url: '/', timestamp: Date.now() };
-  pending.push(notification);
-  saveJSON(pendingFile, pending);
-  res.json({ success: true, message: 'Push notification queued for delivery' });
+  try {
+    var sent = await sendPushToAll(title, body, '/');
+    res.json({ success: true, message: 'Push sent to ' + sent + ' subscribers' });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed: ' + e.message });
+  }
 });
 
-app.use(express.static(path.join(__dirname, 'public')));
+// === STATIC FILES + CACHE HEADERS ===
+app.use(express.static(path.join(__dirname, 'public'), {
+  maxAge: '1h',
+  etag: true,
+  lastModified: true,
+  setHeaders: function(res, filePath) {
+    if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache');
+    else if (filePath.match(/\.(js|css)$/)) res.setHeader('Cache-Control', 'public, max-age=86400');
+    else if (filePath.match(/\.(png|jpg|svg|ico|woff2?)$/)) res.setHeader('Cache-Control', 'public, max-age=604800');
+  }
+}));
+
+// === ERROR LOGGING MIDDLEWARE ===
+app.use(function(err, req, res, next) {
+  console.error('[ERROR]', new Date().toISOString(), req.method, req.url, err.message || err);
+  res.status(500).json({ error: 'Internal server error' });
+});
 
 loadTrackedTips(); loadElo(); loadForm(); loadWeights(); loadCalibration(); loadTeamStats(); loadH2H(); loadMatchDates(); loadModelCoeffs(); loadFeatureLogs(); loadSportHealth(); loadCachedOdds(); loadRacingEvents();
 refreshTips();

@@ -328,10 +328,16 @@ function requestPushNotification() {
 }
 function registerPushSubscription() {
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
-  navigator.serviceWorker.ready.then(function(reg) {
-    reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: '' }).then(function(sub) {
-      var subJson = sub.toJSON();
-      apiPost('/api/push/subscribe', subJson).catch(function() {});
+  fetch('/api/vapid-key').then(function(r) { return r.json(); }).then(function(data) {
+    if (!data.key) return;
+    var key = data.key;
+    var padding = '='.repeat((4 - key.length % 4) % 4);
+    var base64 = (key + padding).replace(/-/g, '+').replace(/_/g, '/');
+    var raw = Uint8Array.from(atob(base64), function(c) { return c.charCodeAt(0); });
+    navigator.serviceWorker.ready.then(function(reg) {
+      reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: raw }).then(function(sub) {
+        apiPost('/api/push/subscribe', sub.toJSON()).catch(function() {});
+      }).catch(function() {});
     }).catch(function() {});
   }).catch(function() {});
 }
@@ -698,6 +704,16 @@ function getWhatsAppLink() {
   apiGet('/api/admin/whatsapp-link').then(function(d) {
     if (d.url) { window.open(d.url, '_blank'); showToast('Opening WhatsApp...', 'info'); }
   }).catch(function() {});
+}
+function sendPushBroadcast() {
+  var title = prompt('Push notification title:', 'MJK Betting Tips — New Tips!');
+  if (!title) return;
+  var body = prompt('Push notification message:', 'Check out today\'s AI-powered tips.');
+  if (!body) return;
+  showToast('Sending push notification...', 'info');
+  apiPost('/api/admin/push-broadcast', { title: title, body: body }).then(function(d) {
+    showToast(d.error ? 'Failed: ' + d.error : d.message, d.error ? 'error' : 'success');
+  }).catch(function() { showToast('Network error', 'error'); });
 }
 
 // === API KEYS ===

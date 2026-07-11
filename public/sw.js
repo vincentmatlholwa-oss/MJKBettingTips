@@ -1,4 +1,4 @@
-var CACHE_NAME = 'mjk-tips-v2';
+var CACHE_NAME = 'mjk-tips-v3';
 var PRECACHE_URLS = ['/', '/index.html', '/styles.css', '/app.js', '/logo.jpg', '/manifest.json'];
 
 self.addEventListener('install', function(e) {
@@ -42,24 +42,3 @@ self.addEventListener('notificationclick', function(e) {
   e.notification.close();
   e.waitUntil(clients.openWindow(e.notification.data ? e.notification.data.url : '/'));
 });
-
-// Poll server for pending notifications every 2 minutes
-var POLL_INTERVAL = 120000;
-function pollNotifications() {
-  fetch('/api/push/pending').then(function(r) { return r.json(); }).then(function(data) {
-    if (data.notifications && data.notifications.length > 0) {
-      data.notifications.forEach(function(n) {
-        self.registration.showNotification(n.title, {
-          body: n.body,
-          icon: '/logo.jpg',
-          badge: '/logo.jpg',
-          vibrate: [200, 100, 200],
-          tag: 'mjk-tip-' + n.timestamp,
-          data: { url: n.url || '/' }
-        });
-      });
-    }
-  }).catch(function() {});
-  setTimeout(pollNotifications, POLL_INTERVAL);
-}
-setTimeout(pollNotifications, POLL_INTERVAL);
