@@ -1112,6 +1112,12 @@ async function handleTelegramMessage(msg) {
   var subs = loadTelegramSubs();
   var isSub = subs.some(function(s) { return s.chatId === chatId; });
 
+  // Auto-detect group chat ID
+  if (chatId < 0 && TELEGRAM_GROUP_ID === '' && msg.chat && msg.chat.title) {
+    process.env.TELEGRAM_GROUP_ID = String(chatId);
+    console.log('[TELEGRAM] Auto-detected group: "' + msg.chat.title + '" ID: ' + chatId + ' — add TELEGRAM_GROUP_ID=' + chatId + ' to .env');
+  }
+
   // /start
   if (text === '/start' || text === '/start@mjk_bettingtips_bot') {
     if (!isSub) { subs.push({ chatId: chatId, username: msg.from.username || '', firstName: msg.from.first_name || '', subscribedAt: new Date().toISOString() }); saveTelegramSubs(subs); }
