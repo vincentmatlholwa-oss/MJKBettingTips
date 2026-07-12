@@ -2488,19 +2488,29 @@ function buildBSDStandaloneTip(bsdKey) {
     price = prob > 0.3 ? (1 + 1 / prob * 0.9).toFixed(2) : '3.50';
   }
   if (prob < 0.28) return null;
-  // Map league to sport key
+  // Map league to sport key and country
   var leagueLower = (bsd.league || '').toLowerCase();
   var sportKey = 'soccer_epl';
-  if (leagueLower.indexOf('la liga') !== -1 || leagueLower.indexOf('spain') !== -1) sportKey = 'soccer_spain_la_liga';
-  else if (leagueLower.indexOf('bundesliga') !== -1 || leagueLower.indexOf('germany') !== -1) sportKey = 'soccer_germany_bundesliga';
-  else if (leagueLower.indexOf('serie a') !== -1 || leagueLower.indexOf('italy') !== -1) sportKey = 'soccer_italy_serie_a';
-  else if (leagueLower.indexOf('ligue 1') !== -1 || leagueLower.indexOf('france') !== -1) sportKey = 'soccer_france_ligue_one';
-  else if (leagueLower.indexOf('eredivisie') !== -1 || leagueLower.indexOf('netherlands') !== -1) sportKey = 'soccer_netherlands_eredivisie';
-  else if (leagueLower.indexOf('primeira') !== -1 || leagueLower.indexOf('portugal') !== -1) sportKey = 'soccer_portugal_liga';
-  else if (leagueLower.indexOf('brasileir') !== -1 || leagueLower.indexOf('brazil') !== -1) sportKey = 'soccer_brazil_serie_a';
-  else if (leagueLower.indexOf('mls') !== -1 || leagueLower.indexOf('usa') !== -1 || leagueLower.indexOf('united states') !== -1) sportKey = 'soccer_usa_mls';
-  else if (leagueLower.indexOf('champions') !== -1) sportKey = 'soccer_uefa_champs_league';
-  else if (leagueLower.indexOf('europa') !== -1) sportKey = 'soccer_uefa_europa_league';
+  var country = '';
+  if (leagueLower.indexOf('la liga') !== -1 || leagueLower.indexOf('spain') !== -1) { sportKey = 'soccer_spain_la_liga'; country = 'Spain'; }
+  else if (leagueLower.indexOf('bundesliga') !== -1 || leagueLower.indexOf('germany') !== -1) { sportKey = 'soccer_germany_bundesliga'; country = 'Germany'; }
+  else if (leagueLower.indexOf('serie a') !== -1 || leagueLower.indexOf('italy') !== -1) { sportKey = 'soccer_italy_serie_a'; country = 'Italy'; }
+  else if (leagueLower.indexOf('ligue 1') !== -1 || leagueLower.indexOf('france') !== -1) { sportKey = 'soccer_france_ligue_one'; country = 'France'; }
+  else if (leagueLower.indexOf('eredivisie') !== -1 || leagueLower.indexOf('netherlands') !== -1) { sportKey = 'soccer_netherlands_eredivisie'; country = 'Netherlands'; }
+  else if (leagueLower.indexOf('primeira') !== -1 || leagueLower.indexOf('portugal') !== -1) { sportKey = 'soccer_portugal_liga'; country = 'Portugal'; }
+  else if (leagueLower.indexOf('brasileir') !== -1 || leagueLower.indexOf('brazil') !== -1) { sportKey = 'soccer_brazil_serie_a'; country = 'Brazil'; }
+  else if (leagueLower.indexOf('mls') !== -1 || leagueLower.indexOf('usa') !== -1 || leagueLower.indexOf('united states') !== -1) { sportKey = 'soccer_usa_mls'; country = 'USA'; }
+  else if (leagueLower.indexOf('champions') !== -1) { sportKey = 'soccer_uefa_champs_league'; country = 'Europe'; }
+  else if (leagueLower.indexOf('europa') !== -1) { sportKey = 'soccer_uefa_europa_league'; country = 'Europe'; }
+  else if (leagueLower.indexOf('premier') !== -1 || leagueLower.indexOf('england') !== -1 || leagueLower.indexOf('english') !== -1) { country = 'England'; }
+  else if (leagueLower.indexOf('turkish') !== -1 || leagueLower.indexOf('turkey') !== -1) { country = 'Turkey'; }
+  else if (leagueLower.indexOf('belgian') !== -1 || leagueLower.indexOf('belgium') !== -1) { country = 'Belgium'; }
+  else if (leagueLower.indexOf('scottish') !== -1 || leagueLower.indexOf('scotland') !== -1) { country = 'Scotland'; }
+  else if (leagueLower.indexOf('argentin') !== -1) { country = 'Argentina'; }
+  else if (leagueLower.indexOf('mexican') !== -1 || leagueLower.indexOf('mexico') !== -1) { country = 'Mexico'; }
+  else if (leagueLower.indexOf('japan') !== -1) { country = 'Japan'; }
+  else if (leagueLower.indexOf('south korea') !== -1) { country = 'South Korea'; }
+  else if (leagueLower.indexOf('saudi') !== -1) { country = 'Saudi Arabia'; }
   // Use API-Football prediction if available for cross-check
   var afPred = getAPIFootballPrediction(home, away);
   var conf = Math.round(prob * 100);
@@ -2517,7 +2527,7 @@ function buildBSDStandaloneTip(bsdKey) {
     type: sportKey, sport: 'Football', icon: '⚽',
     match: home + ' vs ' + away,
     league: bsd.league || 'Football',
-    country: '',
+    country: country,
     marketType: 'h2h', market: 'Match Result', marketLine: null,
     kickoff: bsd.kickoff,
     pick: pick, odds: price, conf: conf,
@@ -2689,10 +2699,12 @@ function isSpam(text) {
 
 function formatTip(t, idx) {
   var kickoff = t.kickoff ? new Date(t.kickoff).toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg', hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' }) : 'TBD';
+  var location = '';
+  if (t.country || t.league) location = ' · ' + (t.country || '') + (t.country && t.league ? ' · ' : '') + (t.league || '');
   return (idx !== undefined ? idx + '. ' : '') +
     t.icon + ' <b>' + t.match + '</b>\n' +
     '   ' + t.pick + ' @ <b>' + t.odds + '</b> (' + t.conf + '%)\n' +
-    '   ' + t.market + ' | ' + kickoff + (t.valueBet ? ' | VALUE' : '');
+    '   ' + t.market + location + ' | ' + kickoff + (t.valueBet ? ' | VALUE' : '');
 }
 
 function upcomingTips(tips, limit) {
@@ -3490,8 +3502,10 @@ function formatTelegramGroupMsg(tips) {
     count++;
     var kickoff = t.kickoff ? new Date(t.kickoff).toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg', hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' }) : 'TBD';
     msg += t.icon + ' <b>' + t.match + '</b>\n';
+    var location = '';
+    if (t.country || t.league) location = (t.country || '') + (t.country && t.league ? ' · ' : '') + (t.league || '');
     msg += '   ' + t.pick + ' @ <b>' + t.odds + '</b> (' + t.conf + '%)\n';
-    msg += '   ' + t.market + ' · ' + kickoff + (t.valueBet ? ' · VALUE' : '') + '\n';
+    msg += '   ' + t.market + (location ? ' · ' + location : '') + ' · ' + kickoff + (t.valueBet ? ' · VALUE' : '') + '\n';
     msg += '   <i>' + t.reason + '</i>\n\n';
   }
   var highConf = tips.filter(function(t) { return t.conf >= 80; });
