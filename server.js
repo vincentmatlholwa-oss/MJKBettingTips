@@ -1514,19 +1514,16 @@ async function checkResults() {
     var tip = pending[i];
     try {
       var home, away; var parts = tip.match.split(' vs '); home = parts[0]; away = parts[1];
-      // Soccer: football-data.org API
-      if (tip.type === 'soccer_fifa_world_cup' || tip.type === 'soccer_epl') {
+      // Soccer: football-data.org API (covers EPL, Championship, Bundesliga, Serie A, Ligue 1, Eredivisie, Brasileirao, etc.)
+      if (tip.type.startsWith('soccer_') && tip.type !== 'soccer_usa_mls') {
         var tipKickoff = new Date(tip.kickoff);
         var dateFrom = new Date(tipKickoff.getTime() - 86400000).toISOString().split('T')[0];
         var dateTo = new Date(now.getTime() + 86400000).toISOString().split('T')[0];
         var res = await fetch(FB_API_BASE + '/matches?dateFrom=' + dateFrom + '&dateTo=' + dateTo, { headers: { 'X-Auth-Token': FB_API_KEY } });
-        if (!res.ok) continue; var data = await res.json(); if (!data.matches) continue;
-        var match = data.matches.find(function(m) { return normalizeTeamName(m.homeTeam ? m.homeTeam.name : '') === normalizeTeamName(home) && normalizeTeamName(m.awayTeam ? m.awayTeam.name : '') === normalizeTeamName(away) && m.status === 'FINISHED' && m.score && m.score.fullTime && m.score.fullTime.home !== null && m.score.fullTime.away !== null; });
-        if (!match) continue;
-        var hg = match.score.fullTime.home, ag = match.score.fullTime.away;
-        applyResultToTip(tip, home, away, hg, ag, now);
-        checked++;
-        continue;
+        if (res.ok) { var data = await res.json(); if (data.matches) {
+          var match = data.matches.find(function(m) { return normalizeTeamName(m.homeTeam ? m.homeTeam.name : '') === normalizeTeamName(home) && normalizeTeamName(m.awayTeam ? m.awayTeam.name : '') === normalizeTeamName(away) && m.status === 'FINISHED' && m.score && m.score.fullTime && m.score.fullTime.home !== null && m.score.fullTime.away !== null; });
+          if (match) { var hg = match.score.fullTime.home, ag = match.score.fullTime.away; applyResultToTip(tip, home, away, hg, ag, now); checked++; continue; }
+        }}
       }
       // Cricket: SportMonks API
       if (tip.type === 'cricket_international_t20') {
@@ -2516,7 +2513,7 @@ function buildBSDStandaloneTip(bsdKey) {
     'primeira liga', 'champions league', 'europa league', 'conference league',
     'scottish premiership', 'belgian pro league', 'turkish super lig',
     'brasileir', 'argentine', 'liga mx', 'mls',
-    'championship', ' league one', ' league two', 'soccer'];
+    'english championship', ' league one', ' league two', 'soccer'];
   var isMajor = majorLeagues.some(function(ml) { return leagueLower.indexOf(ml) !== -1; });
   if (!isMajor) return null;
   // Skip if kickoff is in the past
