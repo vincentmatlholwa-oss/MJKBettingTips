@@ -171,10 +171,7 @@ function showAuthModal(mode) {
   if (_closeAuthTimer) { clearTimeout(_closeAuthTimer); _closeAuthTimer = null; }
   var m = document.getElementById('authModal');
   if (!m) return;
-  m.style.display = 'flex';
-  m.style.opacity = '1';
-  m.style.pointerEvents = 'all';
-  setTimeout(function() { m.classList.add('open'); }, 10);
+  m.classList.add('open');
   document.getElementById('authTitle').textContent = mode === 'login' ? 'Login' : 'Register';
   document.getElementById('authBtn').textContent = mode === 'login' ? 'Login' : 'Register';
   document.getElementById('authBtn').setAttribute('data-mode', mode);
@@ -240,13 +237,6 @@ function closeAuth() {
   if (oddsContent) oddsContent.remove();
   if (m) {
     m.classList.remove('open');
-    if (_closeAuthTimer) clearTimeout(_closeAuthTimer);
-    _closeAuthTimer = setTimeout(function() {
-      m.style.display = 'none';
-      m.style.opacity = '0';
-      m.style.pointerEvents = 'none';
-      _closeAuthTimer = null;
-    }, 300);
   }
 }
 function handleAuth() {
@@ -327,7 +317,7 @@ function showRealityCheck() {
   var el = document.getElementById('rcSessionTime');
   if (el) el.textContent = elapsed + ' minutes';
   var modal = document.getElementById('realityModal');
-  if (modal) { modal.style.display = 'flex'; setTimeout(function() { modal.classList.add('open'); }, 10); }
+  if (modal) modal.classList.add('open');
 }
 
 // === PUSH NOTIFICATIONS ===
@@ -1108,8 +1098,7 @@ function openSubModal(plan, price, tierKey) {
   var m = document.getElementById('subModal');
   if (!m) return;
   if (!currentUser) { showAuthModal('login'); return; }
-  m.style.display = 'flex';
-  setTimeout(function() { m.classList.add('open'); }, 10);
+  m.classList.add('open');
   document.getElementById('subTitle').textContent = plan + ' Plan — ' + price;
   document.getElementById('subDesc').textContent = 'Contact us to activate your plan. Admin will upgrade within 1 hour of payment confirmation.';
   var waLink = document.getElementById('subWaLink');
@@ -1121,7 +1110,7 @@ function openSubModal(plan, price, tierKey) {
 }
 function closeSub() {
   var m = document.getElementById('subModal');
-  if (m) { m.classList.remove('open'); setTimeout(function() { m.style.display = 'none'; }, 300); }
+  if (m) m.classList.remove('open');
 }
 
 // === STATS & HISTORY ===
