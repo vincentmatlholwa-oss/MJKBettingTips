@@ -88,6 +88,9 @@ const SPORTMONKS_API_BASE = 'https://api.sportmonks.com/v3/football';
 const BSD_API_KEY = process.env.BSD_API_KEY || '';
 const BSD_API_BASE = 'https://sports.bzzoiro.com/api';
 let bsdPredictions = {};  // { 'HomeTeam|AwayTeam': { home, draw, away, confidence, xg_home, xg_away, score } }
+const APIFOOTBALL_KEY = process.env.APIFOOTBALL_KEY || '';
+const APIFOOTBALL_BASE = 'https://v3.football.api-sports.io';
+let apiFootballPredictions = {};  // { 'HomeTeam|AwayTeam': { home, draw, away, winner, advice } }
 
 const SPORTS = [
   { key: 'soccer_fifa_world_cup', name: 'FIFA World Cup', icon: '\u26BD' },
@@ -1136,6 +1139,8 @@ async function buildSoccerTip(oddsMatch, sport) {
   const h2hData = getH2H(sport.key, home, away);
   // BSD CatBoost ML prediction
   const bsdPred = getBSDPrediction(home, away);
+  // API-Football Poisson/statistics prediction
+  const afPred = getAPIFootballPrediction(home, away);
   let pred;
   if (mlHomeProb !== null) {
     const mlAwayProb = 1 - mlHomeProb;
@@ -1190,9 +1195,11 @@ async function buildSoccerTip(oddsMatch, sport) {
   if (consensus) rc.push(consensus.totalBooks + 'bk');
   if (h2hData && h2hData.total >= 1) rc.push('H2H' + h2hData.total);
   if (hForm && aForm) rc.push('F' + hForm.wins + 'W-' + hForm.losses + 'L/' + aForm.wins + 'W-' + aForm.losses + 'L');
-  // Ensemble voting with BSD
-  var ensembleResult = ensembleVote(pred.homeWin, pred.awayWin, pred.draw || 0, bsdPred);
-  if (bsdPred && !ensembleResult.agree) rc.push('BSD-DISAGREE');
+  // Ensemble voting with BSD + API-Football
+  var ensembleResult = tripleEnsembleVote(pred.homeWin, pred.awayWin, pred.draw || 0, bsdPred, afPred);
+  if (afPred) rc.push('AF');
+  if (ensembleResult.unanimous) rc.push('UNANIMOUS');
+  else if (ensembleResult.disagree) rc.push('DISAGREE');
 
   // === Evaluate all markets ===
   var candidates = [];
@@ -1245,11 +1252,11 @@ async function buildSoccerTip(oddsMatch, sport) {
   if (candidates.length === 0 || candidates[0].score < 3) return null;
   var best = candidates[0];
   var finalConf = Math.min(cfg.maxConf, Math.max(cfg.minConf, best.conf));
-  // Ensemble boost: if BSD agrees, boost confidence; if disagrees, reduce
-  if (bsdPred) {
-    if (ensembleResult.agree) finalConf = Math.min(cfg.maxConf, finalConf + ensembleResult.boostConfidence);
-    else finalConf = Math.max(cfg.minConf, finalConf - 5);
-  }
+  // Ensemble boost: triple vote agreement
+  if (ensembleResult.unanimous) finalConf = Math.min(cfg.maxConf, finalConf + ensembleResult.boostConfidence);
+  else if (ensembleResult.agree) finalConf = Math.min(cfg.maxConf, finalConf + ensembleResult.boostConfidence);
+  else if (ensembleResult.disagree) finalConf = Math.max(cfg.minConf, finalConf - 8);
+  else finalConf = Math.max(cfg.minConf, finalConf - 3);
   var reason = 'AI [' + best.market + '] ' + rc.join(' | ');
   return { type: sport.key, sport: sport.name, icon: sport.icon, match: home + ' vs ' + away, league: sport.name, country: COUNTRY_MAP[sport.key] || '', marketType: best.marketType, market: best.market, marketLine: best.line, kickoff: oddsMatch.commence_time, pick: best.pick, odds: best.odds, conf: finalConf, realOdds: consensus ? { home: consensus.bestHomePrice || null, away: consensus.bestAwayPrice || null, draw: consensus.bestDrawPrice || null } : null, bookmaker: best.bookmaker, valueBet: best.valueBet, reason: reason, features: features, bsdAgree: bsdPred ? ensembleResult.agree : null };
 }
@@ -1346,6 +1353,8 @@ function buildNonSoccerTip(oddsMatch, sport) {
 
   // BSD CatBoost ML prediction
   const bsdPred = getBSDPrediction(home, away);
+  // API-Football Poisson/statistics prediction
+  const afPred = getAPIFootballPrediction(home, away);
 
   // ML model override
   const features = buildFeatures(home, away, sport.key);
@@ -1376,15 +1385,15 @@ function buildNonSoccerTip(oddsMatch, sport) {
   const h2h = getH2H(sport.key, home, away);
   const h2hNote = h2h ? ' H2H ' + h2h.total : '';
   var dataSrc = (hStats.source === 'standings') ? ' REAL' : '';
-  // Ensemble voting with BSD
+  // Ensemble voting with BSD + API-Football
   var nHomeNorm = nHome, nAwayNorm = nAway;
-  var ensembleResult = ensembleVote(nHomeNorm, nAwayNorm, nDraw, bsdPred);
+  var ensembleResult = tripleEnsembleVote(nHomeNorm, nAwayNorm, nDraw, bsdPred, afPred);
   var finalConf2 = Math.min(cfg.maxConf, Math.max(cfg.minConf, confidence));
-  if (bsdPred) {
-    if (ensembleResult.agree) finalConf2 = Math.min(cfg.maxConf, finalConf2 + ensembleResult.boostConfidence);
-    else finalConf2 = Math.max(cfg.minConf, finalConf2 - 5);
-  }
-  reason = 'AI' + dataSrc + (rawLR !== null ? ' ML' : '') + (bsdPred ? ' BSD' : '') + ' Elo ' + Math.round(adjustedElo) + 'v' + Math.round(adjustedEloA) + formNote + h2hNote + ' ' + consensus.totalBooks + 'books';
+  if (ensembleResult.unanimous) finalConf2 = Math.min(cfg.maxConf, finalConf2 + ensembleResult.boostConfidence);
+  else if (ensembleResult.agree) finalConf2 = Math.min(cfg.maxConf, finalConf2 + ensembleResult.boostConfidence);
+  else if (ensembleResult.disagree) finalConf2 = Math.max(cfg.minConf, finalConf2 - 8);
+  else finalConf2 = Math.max(cfg.minConf, finalConf2 - 3);
+  reason = 'AI' + dataSrc + (rawLR !== null ? ' ML' : '') + (bsdPred ? ' BSD' : '') + (afPred ? ' AF' : '') + (ensembleResult.unanimous ? ' UNANIMOUS' : ensembleResult.disagree ? ' DISAGREE' : '') + ' Elo ' + Math.round(adjustedElo) + 'v' + Math.round(adjustedEloA) + formNote + h2hNote + ' ' + consensus.totalBooks + 'books';
   return { type: sport.key, sport: sport.name, icon: sport.icon, match: home + ' vs ' + away, league: sport.name, country: COUNTRY_MAP[sport.key] || '', marketType: 'h2h', market: cfg.hasDraw ? 'Match Result' : 'Match Winner', marketLine: null, kickoff: oddsMatch.commence_time, pick: tipText, odds: odds, conf: finalConf2, realOdds: { home: consensus.bestHomePrice || null, away: consensus.bestAwayPrice || null, draw: cfg.hasDraw ? (consensus.bestDrawPrice || null) : null }, bookmaker: bookmaker, valueBet: valueBet, reason: reason, features: features, bsdAgree: bsdPred ? ensembleResult.agree : null };
 }
 
@@ -1587,6 +1596,8 @@ async function refreshTips() {
   await fetchSportMonksFixtures();
   // Fetch BSD CatBoost ML predictions (free, unlimited)
   await fetchBSDPredictions();
+  // Fetch API-Football predictions (6-algorithm Poisson, free 100/day)
+  await fetchAPIFootballPredictions();
   var allTips = [];
   if (cachedRacingEvents && cachedRacingEvents.length > 0) {
     var racingTips = [];
@@ -2319,6 +2330,125 @@ function ensembleVote(ourHomeProb, ourAwayProb, ourDrawProb, bsdPred) {
   return { agree: agree, boostConfidence: boostConfidence, bsdPick: bsdPick, ourPick: ourPick };
 }
 
+// Triple ensemble: our model + BSD CatBoost + API-Football Poisson
+function tripleEnsembleVote(ourHomeProb, ourAwayProb, ourDrawProb, bsdPred, afPred) {
+  var ourPick = ourHomeProb >= ourAwayProb ? (ourHomeProb >= ourDrawProb ? 'H' : 'D') : (ourAwayProb >= ourDrawProb ? 'A' : 'D');
+  var picks = [ourPick];
+  var labels = ['AI'];
+  if (bsdPred) {
+    var bsdPick = bsdPred.predictedResult || (bsdPred.home >= bsdPred.away ? (bsdPred.home >= bsdPred.draw ? 'H' : 'D') : (bsdPred.away >= bsdPred.draw ? 'A' : 'D'));
+    picks.push(bsdPick); labels.push('BSD');
+  }
+  if (afPred) {
+    picks.push(afPred.winnerPick); labels.push('AF');
+  }
+  var uniquePicks = picks.filter(function(v, i, a) { return a.indexOf(v) === i; });
+  var agreeCount = 0;
+  for (var i = 1; i < picks.length; i++) { if (picks[i] === picks[0]) agreeCount++; }
+  var totalModels = picks.length;
+  var unanimous = uniquePicks.length === 1;
+  var majority = agreeCount >= Math.floor(totalModels / 2);
+  var boostConfidence = 0;
+  if (unanimous && totalModels >= 3) boostConfidence = 10;
+  else if (unanimous && totalModels === 2) boostConfidence = 6;
+  else if (majority && totalModels >= 3) boostConfidence = 4;
+  var disagree = !majority && totalModels >= 3;
+  return { agree: majority, unanimous: unanimous, disagree: disagree, boostConfidence: boostConfidence, picks: picks, labels: labels, ourPick: ourPick };
+}
+
+// === API-FOOTBALL PREDICTIONS (6-algorithm Poisson/statistics) ===
+let apiFootballFetchDate = '';
+async function fetchAPIFootballPredictions() {
+  var today = new Date().toISOString().slice(0, 10);
+  if (apiFootballFetchDate === today && Object.keys(apiFootballPredictions).length > 0) return;
+  if (!APIFOOTBALL_KEY) { console.log('[AF] No API key configured'); return; }
+  try {
+    // Get fixtures for next 3 days across major leagues
+    var leagueIds = [39, 140, 135, 78, 61, 2, 848, 3, 88, 169]; // EPL, LaLiga, SerieA, Bundesliga, Ligue1, UCL, UEL, UCL-Q, Brazil, SA-Prem
+    var fixtureIds = [];
+    for (var li = 0; li < leagueIds.length; li++) {
+      try {
+        var season = new Date().getFullYear();
+        var fUrl = APIFOOTBALL_BASE + '/fixtures?league=' + leagueIds[li] + '&season=' + season + '&from=' + today + '&to=' + today;
+        var fRes = await safeFetch(fUrl, { headers: { 'x-apisports-key': APIFOOTBALL_KEY } }, 8000);
+        if (!fRes.ok) continue;
+        var fData = await fRes.json();
+        if (fData.response) {
+          for (var fi = 0; fi < fData.response.length; fi++) {
+            var fx = fData.response[fi];
+            fixtureIds.push({ id: fx.fixture.id, home: fx.teams.home.name, away: fx.teams.away.name });
+          }
+        }
+      } catch(e) {}
+    }
+    // Also get live matches
+    try {
+      var liveRes = await safeFetch(APIFOOTBALL_BASE + '/fixtures?live=all', { headers: { 'x-apisports-key': APIFOOTBALL_KEY } }, 8000);
+      if (liveRes.ok) {
+        var liveData = await liveRes.json();
+        if (liveData.response) {
+          for (var li2 = 0; li2 < liveData.response.length; li2++) {
+            var lfx = liveData.response[li2];
+            fixtureIds.push({ id: lfx.fixture.id, home: lfx.teams.home.name, away: lfx.teams.away.name });
+          }
+        }
+      }
+    } catch(e) {}
+    console.log('[AF] Found ' + fixtureIds.length + ' fixtures to predict');
+    // Get predictions for each fixture (respect rate limits — max 40)
+    apiFootballPredictions = {};
+    var fetchCount = Math.min(fixtureIds.length, 40);
+    for (var pi = 0; pi < fetchCount; pi++) {
+      try {
+        var pUrl = APIFOOTBALL_BASE + '/predictions?fixture=' + fixtureIds[pi].id;
+        var pRes = await safeFetch(pUrl, { headers: { 'x-apisports-key': APIFOOTBALL_KEY } }, 8000);
+        if (!pRes.ok) continue;
+        var pData = await pRes.json();
+        if (!pData.response || !pData.response[0]) continue;
+        var pred = pData.response[0].predictions;
+        if (!pred || !pred.percent) continue;
+        var homePct = parseInt(pred.percent.home) || 33;
+        var drawPct = parseInt(pred.percent.draw) || 33;
+        var awayPct = parseInt(pred.percent.away) || 34;
+        var total = homePct + drawPct + awayPct;
+        var hKey = fixtureIds[pi].home.toLowerCase().trim() + '|' + fixtureIds[pi].away.toLowerCase().trim();
+        var winnerName = pred.winner ? pred.winner.name : '';
+        var winnerPick = 'D';
+        if (winnerName && winnerName.toLowerCase().trim() === fixtureIds[pi].home.toLowerCase().trim()) winnerPick = 'H';
+        else if (winnerName && winnerName.toLowerCase().trim() === fixtureIds[pi].away.toLowerCase().trim()) winnerPick = 'A';
+        apiFootballPredictions[hKey] = {
+          home: total > 0 ? homePct / total : 0.33,
+          draw: total > 0 ? drawPct / total : 0.33,
+          away: total > 0 ? awayPct / total : 0.34,
+          winnerPick: winnerPick,
+          advice: pred.advice || '',
+          winOrDraw: pred.win_or_draw || false
+        };
+      } catch(e) {}
+    }
+    apiFootballFetchDate = today;
+    console.log('[AF] Cached ' + Object.keys(apiFootballPredictions).length + ' predictions');
+  } catch (e) {
+    console.log('[AF] Error: ' + (e.message || e).slice(0, 200));
+    apiFootballFetchDate = today;
+  }
+}
+
+function getAPIFootballPrediction(homeTeam, awayTeam) {
+  var key = homeTeam.toLowerCase().trim() + '|' + awayTeam.toLowerCase().trim();
+  if (apiFootballPredictions[key]) return apiFootballPredictions[key];
+  // Fuzzy match
+  var hLower = homeTeam.toLowerCase().trim();
+  var aLower = awayTeam.toLowerCase().trim();
+  var keys = Object.keys(apiFootballPredictions);
+  for (var i = 0; i < keys.length; i++) {
+    var parts = keys[i].split('|');
+    if (parts.length === 2 && parts[0].indexOf(hLower) !== -1 && parts[1].indexOf(aLower) !== -1) return apiFootballPredictions[keys[i]];
+    if (parts.length === 2 && hLower.indexOf(parts[0]) !== -1 && aLower.indexOf(parts[1]) !== -1) return apiFootballPredictions[keys[i]];
+  }
+  return null;
+}
+
 function buildSportMonksTip(fixture) {
   if (fixture.status === 'FT') return null;
   var sportKey = fixture.sportKey || 'soccer_epl';
@@ -2349,6 +2479,8 @@ function buildSportMonksTip(fixture) {
   var rawLR = predictLR(sportKey, features);
   // BSD CatBoost ML prediction
   var bsdPred2 = getBSDPrediction(home, away);
+  // API-Football Poisson/statistics prediction
+  var afPred2 = getAPIFootballPrediction(home, away);
   if (rawLR !== null) {
     var mlH = rawLR, mlA = 1 - rawLR;
     var bW3 = bsdPred2 ? 0.15 : 0;
@@ -2376,18 +2508,21 @@ function buildSportMonksTip(fixture) {
     return null;
   }
   conf = Math.min(cfg.maxConf, Math.max(cfg.minConf, calibrateConfidence(conf)));
-  // Ensemble voting with BSD
-  var ensembleR2 = ensembleVote(predHW, predAW, predD, bsdPred2);
-  if (bsdPred2) {
-    if (ensembleR2.agree) conf = Math.min(cfg.maxConf, conf + ensembleR2.boostConfidence);
-    else conf = Math.max(cfg.minConf, conf - 5);
-  }
+  // Ensemble voting with BSD + API-Football
+  var ensembleR2 = tripleEnsembleVote(predHW, predAW, predD, bsdPred2, afPred2);
+  if (ensembleR2.unanimous) conf = Math.min(cfg.maxConf, conf + ensembleR2.boostConfidence);
+  else if (ensembleR2.agree) conf = Math.min(cfg.maxConf, conf + ensembleR2.boostConfidence);
+  else if (ensembleR2.disagree) conf = Math.max(cfg.minConf, conf - 8);
+  else conf = Math.max(cfg.minConf, conf - 3);
 
   var rc = [];
   if (hStats.source === 'standings') rc.push('REAL');
   rc.push('SM');
   if (rawLR !== null) rc.push('ML');
   if (bsdPred2) rc.push('BSD');
+  if (afPred2) rc.push('AF');
+  if (ensembleR2.unanimous) rc.push('UNANIMOUS');
+  else if (ensembleR2.disagree) rc.push('DISAGREE');
   rc.push('Pois+' + poisson.expectedHomeGoals.toFixed(1) + '-' + poisson.expectedAwayGoals.toFixed(1));
   rc.push('Elo ' + Math.round(adjH) + 'v' + Math.round(adjA));
 
@@ -3180,6 +3315,13 @@ app.get('/api/bsd-status', function(req, res) {
   var keys = Object.keys(bsdPredictions);
   var sample = keys.length > 0 ? bsdPredictions[keys[0]] : null;
   res.json({ configured: !!BSD_API_KEY, cached: keys.length, fetchDate: bsdFetchDate, sample: sample ? { match: keys[0], home: sample.home, away: sample.away, draw: sample.draw, confidence: sample.confidence, predictedResult: sample.predictedResult } : null });
+});
+
+// API-Football predictions status
+app.get('/api/af-status', function(req, res) {
+  var keys = Object.keys(apiFootballPredictions);
+  var sample = keys.length > 0 ? apiFootballPredictions[keys[0]] : null;
+  res.json({ configured: !!APIFOOTBALL_KEY, cached: keys.length, fetchDate: apiFootballFetchDate, dailyLimit: 100, sample: sample ? { match: keys[0], home: sample.home, away: sample.away, draw: sample.draw, winnerPick: sample.winnerPick, advice: sample.advice } : null });
 });
 
 app.get('/api/tiers', function(req, res) {
