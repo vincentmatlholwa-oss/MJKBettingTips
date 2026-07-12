@@ -562,14 +562,9 @@ async function buildStatsBasedTip(home, away, league, kickoff, sportKey) {
   conf = calibrateConfidence(conf);
 
   var features = buildFeatures(home, away, sportKey);
-  var rc = [];
-  if (hStats.source === 'standings') rc.push('REAL');
-  rc.push('Pois+' + poisson.expectedHomeGoals.toFixed(1) + '-' + poisson.expectedAwayGoals.toFixed(1));
-  rc.push('Elo ' + Math.round(adjHome) + 'v' + Math.round(adjAway));
-  if (research.home && research.home.formString) rc.push('F' + research.home.formString);
-  if (research.away && research.away.formString) rc.push('F' + research.away.formString);
-  if (h2hData) rc.push('H2H' + h2hData.total);
-  rc.push('NO-ODDS');
+  var hFormS = getFormWindow(sportKey, home, cfg.formWindow);
+  var aFormS = getFormWindow(sportKey, away, cfg.formWindow);
+  var reasonS = buildTipReason({ marketType: 'h2h', market: mr, pick: pick, home: home, away: away, poisson: poisson, eloH: adjHome, eloA: adjAway, hForm: hFormS, aForm: aFormS, expectedTotal: poisson.expectedHomeGoals + poisson.expectedAwayGoals });
 
   return {
     type: sportKey, sport: 'Football', icon: '\u26BD',
@@ -578,7 +573,7 @@ async function buildStatsBasedTip(home, away, league, kickoff, sportKey) {
     marketType: 'h2h', market: mr, marketLine: null,
     kickoff: kickoff, pick: pick, odds: odds, conf: conf,
     realOdds: null, bookmaker: '', valueBet: false,
-    reason: 'AI [' + mr + '] ' + rc.join(' | '), features: features
+    reason: reasonS, features: features
   };
 }
 
@@ -1196,6 +1191,88 @@ function scoreMarket(aiProb, bestOdds, agreement) {
   return value * 100 + (conf - 50);
 }
 
+// === HUMAN-READABLE AI REASONING ===
+function buildTipReason(ctx) {
+  // ctx: { marketType, market, pick, home, away, poisson, eloH, eloA, hForm, aForm, bsdPred, afPred, ensembleResult, bttsProb, ouOver, ouUnder, expectedTotal, bestMarketScore }
+  var lines = [];
+  var home = ctx.home, away = ctx.away;
+  var pick = ctx.pick || '';
+
+  if (ctx.marketType === 'h2h') {
+    // Match Result reasoning
+    var eloDiff = (ctx.eloH || 1500) - (ctx.eloA || 1500);
+    var eloFav = eloDiff > 0 ? home : away;
+    var eloAbs = Math.abs(Math.round(eloDiff));
+    if (eloAbs > 150) lines.push(eloFav + ' rated significantly stronger (ELO gap ' + eloAbs + ')');
+    else if (eloAbs > 80) lines.push(eloFav + ' slight ELO advantage (+' + eloAbs + ')');
+    else lines.push('Teams closely matched on ELO');
+    if (ctx.poisson) {
+      var xgDiff = ctx.poisson.expectedHomeGoals - ctx.poisson.expectedAwayGoals;
+      if (Math.abs(xgDiff) > 0.4) {
+        var xgFav = xgDiff > 0 ? home : away;
+        lines.push('xG model expects ' + xgFav + ' to score more (' + ctx.poisson.expectedHomeGoals.toFixed(1) + ' vs ' + ctx.poisson.expectedAwayGoals.toFixed(1) + ')');
+      } else {
+        lines.push('Expected goals close (' + ctx.poisson.expectedHomeGoals.toFixed(1) + ' vs ' + ctx.poisson.expectedAwayGoals.toFixed(1) + ')');
+      }
+    }
+    if (ctx.hForm && ctx.aForm) {
+      var hPts = ctx.hForm.wins * 3 + ctx.hForm.draws;
+      var aPts = ctx.aForm.wins * 3 + ctx.aForm.draws;
+      if (hPts > aPts + 3) lines.push(home + ' in stronger form (' + ctx.hForm.wins + 'W-' + ctx.hForm.losses + 'L vs ' + ctx.aForm.wins + 'W-' + ctx.aForm.losses + 'L)');
+      else if (aPts > hPts + 3) lines.push(away + ' in stronger form (' + ctx.aForm.wins + 'W-' + ctx.aForm.losses + 'L vs ' + ctx.hForm.wins + 'W-' + ctx.hForm.losses + 'L)');
+    }
+    if (ctx.h2hTotal && ctx.h2hTotal >= 3) {
+      if (ctx.h2hHomeWins > 0.55) lines.push(home + ' dominant in H2H (' + Math.round(ctx.h2hHomeWins * 100) + '% win rate in ' + ctx.h2hTotal + ' meetings)');
+      else if (ctx.h2hHomeWins < 0.3) lines.push(away + ' dominant in H2H (' + Math.round((1 - ctx.h2hHomeWins) * 100) + '% win rate)');
+    }
+  }
+  else if (ctx.marketType === 'ou') {
+    // Over/Under reasoning
+    var expTotal = ctx.expectedTotal || (ctx.poisson ? ctx.poisson.expectedHomeGoals + ctx.poisson.expectedAwayGoals : 0);
+    var line = ctx.marketLine || 2.5;
+    if (expTotal > line + 0.5) lines.push('Expected goals (' + expTotal.toFixed(1) + ') comfortably above ' + line + ' line');
+    else if (expTotal > line + 0.2) lines.push('Expected goals (' + expTotal.toFixed(1) + ') slightly above ' + line + ' line');
+    else if (expTotal < line - 0.5) lines.push('Expected goals (' + expTotal.toFixed(1) + ') well below ' + line + ' line');
+    else lines.push('Expected goals (' + expTotal.toFixed(1) + ') close to ' + line + ' line');
+    if (ctx.poisson) {
+      if (ctx.poisson.expectedHomeGoals > 1.4 || ctx.poisson.expectedAwayGoals > 1.4) {
+        var highScorer = ctx.poisson.expectedHomeGoals > ctx.poisson.expectedAwayGoals ? home : away;
+        lines.push(highScorer + ' strong attacking threat (xG ' + Math.max(ctx.poisson.expectedHomeGoals, ctx.poisson.expectedAwayGoals).toFixed(1) + ')');
+      }
+    }
+    if (pick.indexOf('Over') !== -1 && expTotal > 2.8) lines.push('High-scoring affair expected');
+    else if (pick.indexOf('Under') !== -1 && expTotal < 2.2) lines.push('Defensive battle anticipated');
+  }
+  else if (ctx.marketType === 'btts') {
+    // BTTS reasoning
+    if (ctx.poisson) {
+      var homeScoreProb = 1 - Math.exp(-ctx.poisson.expectedHomeGoals);
+      var awayScoreProb = 1 - Math.exp(-ctx.poisson.expectedAwayGoals);
+      if (homeScoreProb > 0.6 && awayScoreProb > 0.6) lines.push('Both teams have >' + Math.round(Math.min(homeScoreProb, awayScoreProb) * 100) + '% chance of scoring');
+      else if (homeScoreProb > 0.55) lines.push(home + ' likely to score (' + Math.round(homeScoreProb * 100) + '%), ' + away + ' has scoring threat (' + Math.round(awayScoreProb * 100) + '%)');
+      if (ctx.poisson.expectedHomeGoals > 1.3 && ctx.poisson.expectedAwayGoals > 1.1) lines.push('Both attacks firing — high BTTS probability');
+    }
+    if (pick === 'No') lines.push('At least one team unlikely to find the net');
+  }
+  else if (ctx.marketType === 'corner') {
+    // Corner reasoning
+    if (ctx.expectedTotal > 10.5) lines.push('Expected corners above average (' + ctx.expectedTotal.toFixed(1) + ')');
+    else if (ctx.expectedTotal < 9) lines.push('Expected corners below average (' + ctx.expectedTotal.toFixed(1) + ')');
+  }
+
+  // AI agreement tag
+  if (ctx.ensembleResult) {
+    if (ctx.ensembleResult.unanimous) lines.push('All 3 AI models agree');
+    else if (ctx.ensembleResult.agree) lines.push('Majority of AI models agree');
+  }
+
+  // Value bet note
+  if (ctx.valueEdge && ctx.valueEdge > 0.08) lines.push('Value detected: AI prob ' + Math.round(ctx.valueEdge * 100) + '% above implied odds');
+
+  if (lines.length === 0) lines.push('Model analysis across Poisson, ELO, and market data');
+  return lines.join('. ') + '.';
+}
+
 // === ADVANCED PREDICTORS ===
 async function buildSoccerTip(oddsMatch, sport) {
   if (disabledSports[sport.key]) return null;
@@ -1281,21 +1358,8 @@ async function buildSoccerTip(oddsMatch, sport) {
   const hForm = getFormWindow(sport.key, home, cfg.formWindow);
   const aForm = getFormWindow(sport.key, away, cfg.formWindow);
 
-  // Reason components
-  let rc = [];
-  if (hStats.source === 'standings') rc.push('REAL');
-  if (pred.mlUsed) rc.push('ML');
-  if (pred.bsdUsed) rc.push('BSD');
-  if (cfg.usePoisson) rc.push('Pois+' + poisson.expectedHomeGoals.toFixed(1) + '-' + poisson.expectedAwayGoals.toFixed(1));
-  rc.push('Elo ' + Math.round(adjustedElo) + 'v' + Math.round(adjustedEloA));
-  if (consensus) rc.push(consensus.totalBooks + 'bk');
-  if (h2hData && h2hData.total >= 1) rc.push('H2H' + h2hData.total);
-  if (hForm && aForm) rc.push('F' + hForm.wins + 'W-' + hForm.losses + 'L/' + aForm.wins + 'W-' + aForm.losses + 'L');
   // Ensemble voting with BSD + API-Football
   var ensembleResult = tripleEnsembleVote(pred.homeWin, pred.awayWin, pred.draw || 0, bsdPred, afPred);
-  if (afPred) rc.push('AF');
-  if (ensembleResult.unanimous) rc.push('UNANIMOUS');
-  else if (ensembleResult.disagree) rc.push('DISAGREE');
 
   // === Evaluate all markets ===
   var candidates = [];
@@ -1353,7 +1417,8 @@ async function buildSoccerTip(oddsMatch, sport) {
   else if (ensembleResult.agree) finalConf = Math.min(cfg.maxConf, finalConf + ensembleResult.boostConfidence);
   else if (ensembleResult.disagree) finalConf = Math.max(cfg.minConf, finalConf - 8);
   else finalConf = Math.max(cfg.minConf, finalConf - 3);
-  var reason = 'AI [' + best.market + '] ' + rc.join(' | ');
+  var valueEdge = best.prob - (1 / parseFloat(best.odds));
+  var reason = buildTipReason({ marketType: best.marketType, market: best.market, pick: best.pick, home: home, away: away, poisson: poisson, eloH: adjustedElo, eloA: adjustedEloA, hForm: hForm, aForm: aForm, bsdPred: bsdPred, afPred: afPred, ensembleResult: ensembleResult, bttsProb: btts.yes, expectedTotal: poisson.expectedHomeGoals + poisson.expectedAwayGoals, valueEdge: valueEdge, h2hTotal: h2hData ? h2hData.total : 0, h2hHomeWins: h2hData ? h2hData.homeWinRate : 0.5 });
   return { type: sport.key, sport: sport.name, icon: sport.icon, match: home + ' vs ' + away, league: sport.name, country: COUNTRY_MAP[sport.key] || '', marketType: best.marketType, market: best.market, marketLine: best.line, kickoff: oddsMatch.commence_time, pick: best.pick, odds: best.odds, conf: finalConf, realOdds: consensus ? { home: consensus.bestHomePrice || null, away: consensus.bestAwayPrice || null, draw: consensus.bestDrawPrice || null } : null, bookmaker: best.bookmaker, valueBet: best.valueBet, reason: reason, features: features, bsdAgree: bsdPred ? ensembleResult.agree : null, tripleAgree: ensembleResult.unanimous };
 }
 
@@ -1422,7 +1487,9 @@ function buildBaseballTip(oddsMatch, sport) {
   var h2h = getH2H(sport.key, home, away);
   var h2hNote = h2h ? ' H2H ' + h2h.total : '';
   var valueNote = ' Value +' + (valueMargin * 100).toFixed(0) + '%';
-  var reason = 'Baseball AI' + (rawLR !== null ? ' ML' : '') + ' Elo ' + Math.round(adjustedElo) + 'v' + Math.round(adjustedEloA) + formNote + h2hNote + valueNote + ' ' + consensus.totalBooks + 'books';
+  var hForm3 = getFormWindow(sport.key, home, cfg.formWindow);
+  var aForm3 = getFormWindow(sport.key, away, cfg.formWindow);
+  var reason = buildTipReason({ marketType: 'h2h', market: 'Match Winner', pick: tipText, home: home, away: away, poisson: poisson, eloH: adjustedElo, eloA: adjustedEloA, hForm: hForm3, aForm: aForm3, bsdPred: bsdPred, afPred: afPred, ensembleResult: { unanimous: false, agree: false }, expectedTotal: poisson.expectedHomeGoals + poisson.expectedAwayGoals, valueEdge: valueMargin });
   return { type: sport.key, sport: sport.name, icon: sport.icon, match: home + ' vs ' + away, league: sport.name, country: COUNTRY_MAP[sport.key] || '', marketType: 'h2h', market: 'Match Winner', marketLine: null, kickoff: oddsMatch.commence_time, pick: tipText, odds: odds, conf: confidence, realOdds: { home: consensus.bestHomePrice || null, away: consensus.bestAwayPrice || null, draw: null }, bookmaker: bookmaker, valueBet: true, reason: reason, features: features };
 }
 
@@ -1489,7 +1556,9 @@ function buildNonSoccerTip(oddsMatch, sport) {
   else if (ensembleResult.agree) finalConf2 = Math.min(cfg.maxConf, finalConf2 + ensembleResult.boostConfidence);
   else if (ensembleResult.disagree) finalConf2 = Math.max(cfg.minConf, finalConf2 - 8);
   else finalConf2 = Math.max(cfg.minConf, finalConf2 - 3);
-  reason = 'AI' + dataSrc + (rawLR !== null ? ' ML' : '') + (bsdPred ? ' BSD' : '') + (afPred ? ' AF' : '') + (ensembleResult.unanimous ? ' UNANIMOUS' : ensembleResult.disagree ? ' DISAGREE' : '') + ' Elo ' + Math.round(adjustedElo) + 'v' + Math.round(adjustedEloA) + formNote + h2hNote + ' ' + consensus.totalBooks + 'books';
+  var hFormN = getFormWindow(sport.key, home, cfg.formWindow);
+  var aFormN = getFormWindow(sport.key, away, cfg.formWindow);
+  reason = buildTipReason({ marketType: 'h2h', market: cfg.hasDraw ? 'Match Result' : 'Match Winner', pick: tipText, home: home, away: away, poisson: { expectedHomeGoals: (hStats.attack / 7.5) * 1.25 * cfg.homeAdv, expectedAwayGoals: (aStats.attack / 7.5) * 1.05 }, eloH: adjustedElo, eloA: adjustedEloA, hForm: hFormN, aForm: aFormN, bsdPred: bsdPred, afPred: afPred, ensembleResult: ensembleResult, h2hTotal: h2h ? h2h.total : 0, h2hHomeWins: h2h ? h2h.homeWinRate : 0.5 });
   return { type: sport.key, sport: sport.name, icon: sport.icon, match: home + ' vs ' + away, league: sport.name, country: COUNTRY_MAP[sport.key] || '', marketType: 'h2h', market: cfg.hasDraw ? 'Match Result' : 'Match Winner', marketLine: null, kickoff: oddsMatch.commence_time, pick: tipText, odds: odds, conf: finalConf2, realOdds: { home: consensus.bestHomePrice || null, away: consensus.bestAwayPrice || null, draw: cfg.hasDraw ? (consensus.bestDrawPrice || null) : null }, bookmaker: bookmaker, valueBet: valueBet, reason: reason, features: features, bsdAgree: bsdPred ? ensembleResult.agree : null, tripleAgree: ensembleResult.unanimous };
 }
 
@@ -2663,12 +2732,7 @@ function buildBSDStandaloneTip(bsdKey) {
   if (unanimous) conf = Math.min(96, conf + 10); // All 3 agree = big boost
   else if (majority) conf = Math.min(92, conf + 5); // 2/3 agree = moderate boost
 
-  // Build reason showing which AIs agreed
-  var agreeLabels = [];
-  for (var i = 0; i < picks.length; i++) { if (picks[i] === bsdPick) agreeLabels.push(labels[i]); }
-  var reason = agreeLabels.join(' + ') + ' agree | xG ' + (bsd.xgHome || 0).toFixed(1) + '-' + (bsd.xgAway || 0).toFixed(1);
-  if (unanimous) reason += ' | UNANIMOUS ' + totalModels + '/' + totalModels;
-  else reason += ' | ' + agreeLabels.length + '/' + totalModels + ' MAJORITY';
+  var reason = buildTipReason({ marketType: 'h2h', market: 'Match Result', pick: pickText, home: home, away: away, poisson: ourPred ? { expectedHomeGoals: ourPred.lambdaHome, expectedAwayGoals: ourPred.lambdaAway } : null, eloH: ourPred ? ourPred.homeElo : 1500, eloA: ourPred ? ourPred.awayElo : 1500, bsdPred: bsd, afPred: afPred, ensembleResult: { unanimous: unanimous, agree: majority }, h2hTotal: 0, h2hHomeWins: 0.5 });
 
   return {
     type: sportKey, sport: 'Football', icon: '⚽',
@@ -2752,16 +2816,9 @@ function buildSportMonksTip(fixture) {
   else if (ensembleR2.disagree) conf = Math.max(cfg.minConf, conf - 8);
   else conf = Math.max(cfg.minConf, conf - 3);
 
-  var rc = [];
-  if (hStats.source === 'standings') rc.push('REAL');
-  rc.push('SM');
-  if (rawLR !== null) rc.push('ML');
-  if (bsdPred2) rc.push('BSD');
-  if (afPred2) rc.push('AF');
-  if (ensembleR2.unanimous) rc.push('UNANIMOUS');
-  else if (ensembleR2.disagree) rc.push('DISAGREE');
-  rc.push('Pois+' + poisson.expectedHomeGoals.toFixed(1) + '-' + poisson.expectedAwayGoals.toFixed(1));
-  rc.push('Elo ' + Math.round(adjH) + 'v' + Math.round(adjA));
+  var hForm2 = getFormWindow(sportKey, home, cfg.formWindow);
+  var aForm2 = getFormWindow(sportKey, away, cfg.formWindow);
+  var reason2 = buildTipReason({ marketType: 'h2h', market: 'Match Result', pick: pick, home: home, away: away, poisson: poisson, eloH: adjH, eloA: adjA, hForm: hForm2, aForm: aForm2, bsdPred: bsdPred2, afPred: afPred2, ensembleResult: ensembleR2, expectedTotal: poisson.expectedHomeGoals + poisson.expectedAwayGoals });
 
   return {
     type: sportKey, sport: 'Football', icon: '\u26BD',
@@ -2770,7 +2827,7 @@ function buildSportMonksTip(fixture) {
     marketType: 'h2h', market: mr, marketLine: null,
     kickoff: fixture.kickoff, pick: pick, odds: odds, conf: conf,
     realOdds: null, bookmaker: '', valueBet: false,
-    reason: 'AI [' + mr + '] ' + rc.join(' | '), features: features,
+    reason: reason2, features: features,
     bsdAgree: bsdPred2 ? ensembleR2.agree : null, tripleAgree: ensembleR2.unanimous
   };
 }
@@ -2848,10 +2905,11 @@ function formatTip(t, idx) {
   var kickoff = t.kickoff ? new Date(t.kickoff).toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg', hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' }) : 'TBD';
   var location = '';
   if (t.country || t.league) location = ' · ' + (t.country || '') + (t.country && t.league ? ' · ' : '') + (t.league || '');
+  var reasonLine = t.reason ? '\n   💡 ' + t.reason : '';
   return (idx !== undefined ? idx + '. ' : '') +
     t.icon + ' <b>' + t.match + '</b>\n' +
     '   ' + t.pick + ' @ <b>' + t.odds + '</b> (' + t.conf + '%)\n' +
-    '   ' + t.market + location + ' | ' + kickoff + (t.valueBet ? ' | VALUE' : '');
+    '   ' + t.market + location + ' | ' + kickoff + (t.valueBet ? ' | VALUE' : '') + reasonLine;
 }
 
 function upcomingTips(tips, limit) {
