@@ -4,17 +4,34 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const fetch = require('node-fetch');
+const AbortController = require('abort-controller');
 const jwt = require('jsonwebtoken');
 const webpush = require('web-push');
 const compression = require('compression');
 
-const app = express();
+function safeFetch(url, opts, timeoutMs) {
+  var controller = new AbortController();
+  var timer = setTimeout(function() { controller.abort(); }, timeoutMs || 10000);
+  return fetch(url, Object.assign({}, opts || {}, { signal: controller.signal })).finally(function() { clearTimeout(timer); });
+}
+
+var DATA_DIR = process.env.RENDER_DISK_PATH || path.join(__dirname, 'data');
+if (!fs.existsSync(DATA_DIR)) { try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch(e) {} }
+
+var USERNAME_REGEX = /^[a-zA-Z0-9_]{3,20}$/;
+function sanitizeInput(str) { return (str || '').trim().toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20); }
+function escapeHtml(str) { return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+
+var app = express();
 app.use(compression());
 app.use(express.json());
-const port = process.env.PORT || 5000;
-const JWT_SECRET = process.env.JWT_SECRET || 'mjk-secret-' + require('crypto').randomBytes(16).toString('hex');
-const ADMIN_USER = process.env.ADMIN_USER || 'admin';
-const ADMIN_PASS = process.env.ADMIN_PASS || 'admin123';
+try { var helmet = require('helmet'); app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false })); } catch(e) {}
+var port = process.env.PORT || 5000;
+var JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) { console.error('[SECURITY] WARNING: JWT_SECRET not set in .env!'); JWT_SECRET = crypto.randomBytes(32).toString('hex'); }
+var ADMIN_USER = process.env.ADMIN_USER || 'admin';
+var ADMIN_PASS = process.env.ADMIN_PASS;
+if (!ADMIN_PASS) { console.error('[SECURITY] CRITICAL: ADMIN_PASS not set in .env!'); ADMIN_PASS = crypto.randomBytes(16).toString('hex'); }
 
 // VAPID keys for Web Push
 const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || 'BAG7sHqLzcMVKLy7djmbvZv_c51035-_YrBPujsBQkDEh4svYCTTYkPIruG1T0RstmV2Kjk4o83kPzy5YLN8dhM';
@@ -37,28 +54,28 @@ const WHATSAPP_INSTANCE_ID = process.env.WHATSAPP_INSTANCE_ID || '';
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN || '';
 const ADMIN_WHATSAPP = process.env.ADMIN_WHATSAPP || '+27677834591';
 
-const RESULTS_FILE = path.join(__dirname, 'data', 'tracked_results.json');
-const ELO_FILE = path.join(__dirname, 'data', 'elo_ratings.json');
-const CALIB_FILE = path.join(__dirname, 'data', 'calibration.json');
-const FORM_FILE = path.join(__dirname, 'data', 'form_tracker.json');
-const WEIGHTS_FILE = path.join(__dirname, 'data', 'adaptive_weights.json');
-const USERS_FILE = path.join(__dirname, 'data', 'users.json');
-const APIKEYS_FILE = path.join(__dirname, 'data', 'api_keys.json');
-const TELEGRAM_FILE = path.join(__dirname, 'data', 'telegram_subs.json');
-const SPORT_PREFS_FILE = path.join(__dirname, 'data', 'sport_prefs.json');
+const RESULTS_FILE = path.join(DATA_DIR, 'tracked_results.json');
+const ELO_FILE = path.join(DATA_DIR, 'elo_ratings.json');
+const CALIB_FILE = path.join(DATA_DIR, 'calibration.json');
+const FORM_FILE = path.join(DATA_DIR, 'form_tracker.json');
+const WEIGHTS_FILE = path.join(DATA_DIR, 'adaptive_weights.json');
+const USERS_FILE = path.join(DATA_DIR, 'users.json');
+const APIKEYS_FILE = path.join(DATA_DIR, 'api_keys.json');
+const TELEGRAM_FILE = path.join(DATA_DIR, 'telegram_subs.json');
+const SPORT_PREFS_FILE = path.join(DATA_DIR, 'sport_prefs.json');
 
 // === Advanced AI data files ===
-const TEAM_STATS_FILE = path.join(__dirname, 'data', 'team_stats.json');
-const H2H_FILE = path.join(__dirname, 'data', 'head_to_head.json');
-const MATCH_DATES_FILE = path.join(__dirname, 'data', 'match_dates.json');
-const MODEL_COEFFS_FILE = path.join(__dirname, 'data', 'model_coeffs.json');
-const FEATURE_LOG_FILE = path.join(__dirname, 'data', 'feature_log.json');
-const SPORT_HEALTH_FILE = path.join(__dirname, 'data', 'sport_health.json');
-const CACHED_ODDS_FILE = path.join(__dirname, 'data', 'cached_odds.json');
-const RACING_EVENTS_FILE = path.join(__dirname, 'data', 'racing_events.json');
-const TG_WARNINGS_FILE = path.join(__dirname, 'data', 'tg_warnings.json');
-const TG_LAST_PROMO_FILE = path.join(__dirname, 'data', 'tg_last_promo.json');
-const PUSH_SUBS_FILE = path.join(__dirname, 'data', 'push_subscriptions.json');
+const TEAM_STATS_FILE = path.join(DATA_DIR, 'team_stats.json');
+const H2H_FILE = path.join(DATA_DIR, 'head_to_head.json');
+const MATCH_DATES_FILE = path.join(DATA_DIR, 'match_dates.json');
+const MODEL_COEFFS_FILE = path.join(DATA_DIR, 'model_coeffs.json');
+const FEATURE_LOG_FILE = path.join(DATA_DIR, 'feature_log.json');
+const SPORT_HEALTH_FILE = path.join(DATA_DIR, 'sport_health.json');
+const CACHED_ODDS_FILE = path.join(DATA_DIR, 'cached_odds.json');
+const RACING_EVENTS_FILE = path.join(DATA_DIR, 'racing_events.json');
+const TG_WARNINGS_FILE = path.join(DATA_DIR, 'tg_warnings.json');
+const TG_LAST_PROMO_FILE = path.join(DATA_DIR, 'tg_last_promo.json');
+const PUSH_SUBS_FILE = path.join(DATA_DIR, 'push_subscriptions.json');
 
 const HORSE_RACING_API_KEY = process.env.HORSE_RACING_API_KEY || ''; // Reserved for future paid API
 const HORSE_RACING_API_BASE = 'https://api.odds-api.net/v1';
@@ -66,6 +83,8 @@ const RACING_JSON_URL = 'https://www.racingandsports.com.au/todays-racing-json-v
 const RACING_FORM_BASE = 'https://www.racingandsports.com.au/form-guide';
 const TAB_NEWS_URL = 'https://news.tab.co.za';
 const DARTS_API_KEY = process.env.DARTS_SPORTDEVS_API_KEY || '';
+const SPORTMONKS_API_KEY = process.env.SPORTMONKS_API_KEY || '';
+const SPORTMONKS_API_BASE = 'https://api.sportmonks.com/v3/football';
 
 const SPORTS = [
   { key: 'soccer_fifa_world_cup', name: 'FIFA World Cup', icon: '\u26BD' },
@@ -114,14 +133,14 @@ const SPORT_CONFIG = {
 function getCfg(key) { return SPORT_CONFIG[key] || { hasDraw: true, homeAdv: 1.10, kFactor: 32, formWindow: 5, minConf: 68, maxConf: 96, usePoisson: false, dcRho: 0 }; }
 
 const TIERS = {
-  free:  { name: 'Free', tipLimit: 3, earlyAccess: false, bankersOnly: false, sportFiltering: false, accaBuilder: false, roiDashboard: false, telegramAlerts: false, monthlyReport: false, horseRacing: false, price: 0 },
-  starter: { name: 'Starter', tipLimit: 10, earlyAccess: false, bankersOnly: false, sportFiltering: false, accaBuilder: false, roiDashboard: false, telegramAlerts: true, monthlyReport: false, horseRacing: false, price: 700 },
-  pro: { name: 'Pro', tipLimit: 25, earlyAccess: false, bankersOnly: false, sportFiltering: false, accaBuilder: true, roiDashboard: true, telegramAlerts: true, monthlyReport: false, horseRacing: true, price: 2500 },
-  elite: { name: 'Elite', tipLimit: 30, earlyAccess: true, bankersOnly: true, sportFiltering: true, accaBuilder: true, roiDashboard: true, telegramAlerts: true, monthlyReport: true, horseRacing: true, price: 6570 }
+  free:  { name: 'Free', tipLimit: 3, earlyAccess: false, bankersOnly: false, sportFiltering: false, accaBuilder: false, roiDashboard: false, telegramAlerts: false, monthlyReport: false, horseRacing: false, apiAccess: false, price: 0 },
+  starter: { name: 'Starter', tipLimit: 10, earlyAccess: false, bankersOnly: false, sportFiltering: false, accaBuilder: false, roiDashboard: false, telegramAlerts: true, monthlyReport: false, horseRacing: false, apiAccess: false, price: 700 },
+  pro: { name: 'Pro', tipLimit: 25, earlyAccess: false, bankersOnly: false, sportFiltering: false, accaBuilder: true, roiDashboard: true, telegramAlerts: true, monthlyReport: false, horseRacing: true, apiAccess: false, price: 2500 },
+  elite: { name: 'Elite', tipLimit: 30, earlyAccess: true, bankersOnly: true, sportFiltering: true, accaBuilder: true, roiDashboard: true, telegramAlerts: true, monthlyReport: true, horseRacing: true, apiAccess: true, price: 6570 }
 };
 
 let teamRatings = {};
-try { teamRatings = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'team_ratings.json'), 'utf8')); } catch (e) { teamRatings = {}; }
+try { teamRatings = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'team_ratings.json'), 'utf8')); } catch (e) { teamRatings = {}; }
 let cachedTips = [];
 let lastGenerated = null;
 let cachedOdds = {};
@@ -144,24 +163,24 @@ let disabledSports = {};
 // === Real standings data from football-data.org ===
 const COMPETITION_MAP = {
   'PL': 'soccer_epl',
-  'PD': 'soccer_epl',
-  'SA': 'soccer_epl',
-  'BL1': 'soccer_epl',
-  'FL1': 'soccer_epl',
-  'CL': 'soccer_epl',
+  'PD': 'soccer_laliga',
+  'SA': 'soccer_seriea',
+  'BL1': 'soccer_bundesliga',
+  'FL1': 'soccer_ligue1',
+  'CL': 'soccer_champions_league',
   'WC': 'soccer_fifa_world_cup',
-  'BSA': 'soccer_epl'
+  'BSA': 'soccer_brasileirao'
 };
 var standingsData = {};
 var standingsDate = '';
-const STANDINGS_FILE = path.join(__dirname, 'data', 'standings_cache.json');
+const STANDINGS_FILE = path.join(DATA_DIR, 'standings_cache.json');
 
 const K_FACTOR = 32;
 const ELO_BASE = 1500;
 const HOME_ADVANTAGE_ELO = 50;
 
 function loadJSON(file, def) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { return def; } }
-function saveJSON(file, data) { try { fs.writeFileSync(file, JSON.stringify(data, null, 2)); } catch (e) {} }
+function saveJSON(file, data) { try { fs.writeFileSync(file, JSON.stringify(data, null, 2)); } catch (e) { console.error('[DATA] Save failed for ' + path.basename(file) + ': ' + (e.message || e).slice(0, 100)); } }
 
 // === Advanced AI loaders ===
 function loadTeamStats() { teamStats = loadJSON(TEAM_STATS_FILE, {}); }
@@ -337,6 +356,11 @@ async function fetchRealH2H(homeTeamName, awayTeamName) {
 // === BROWSER RESEARCH: Scrape real-time stats from public sources ===
 var researchCache = {};
 var RESEARCH_TTL = 3600000; // 1 hour
+var revokedTokens = {};
+
+function revokeToken(token) { revokedTokens[token] = Date.now(); }
+function cleanRevokedTokens() { var now = Date.now(); for (var t in revokedTokens) { if (now - revokedTokens[t] > 7 * 86400000) delete revokedTokens[t]; } }
+function cleanResearchCache() { var now = Date.now(); for (var k in researchCache) { if (now - researchCache[k].ts > RESEARCH_TTL * 2) delete researchCache[k]; } }
 
 async function researchTeamStats(teamName) {
   var cacheKey = teamName.toLowerCase();
@@ -370,8 +394,7 @@ async function researchTeamStats(teamName) {
     }
   } catch (e) {}
   try {
-    // Source 2: Scrape simple team stats from a free public API
-    var fbres = await fetch('https://www.football-data.org/v4/teams/' + (result.teamId || '0') + '/matches?limit=5', { headers: { 'X-Auth-Token': FB_API_KEY || '' }, timeout: 5000 }).catch(function() { return null; });
+    // Source 2: Research complete
   } catch (e) {}
   researchCache[cacheKey] = result;
   return result;
@@ -474,7 +497,12 @@ function generateToken(user) {
 function authMiddleware(req, res, next) {
   var header = req.headers.authorization;
   if (!header || !header.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' });
-  try { req.user = jwt.verify(header.split(' ')[1], JWT_SECRET); next(); }
+  try {
+    var token = header.split(' ')[1];
+    if (revokedTokens[token]) return res.status(401).json({ error: 'Token revoked' });
+    req.user = jwt.verify(token, JWT_SECRET);
+    next();
+  }
   catch (e) { return res.status(401).json({ error: 'Invalid token' }); }
 }
 function adminMiddleware(req, res, next) {
@@ -1366,6 +1394,8 @@ async function refreshTips() {
   await fetchHorseRacing();
   // Fetch darts fixtures
   await fetchDartsFixtures();
+  // Fetch SportMonks football fixtures
+  await fetchSportMonksFixtures();
   var allTips = [];
   if (cachedRacingEvents && cachedRacingEvents.length > 0) {
     var racingTips = [];
@@ -1401,6 +1431,14 @@ async function refreshTips() {
       for (var di = 0; di < cachedDartsFixtures.length; di++) { var tip = buildDartsTip(cachedDartsFixtures[di]); if (tip) allTips.push(tip); }
     }
     // Non-soccer without odds: skip (no reliable data source)
+  }
+  // SportMonks: generate tips from SportMonks fixtures (supplements other sources)
+  if (cachedSportMonksFixtures.length > 0) {
+    for (var smi = 0; smi < cachedSportMonksFixtures.length; smi++) {
+      var smTip = buildSportMonksTip(cachedSportMonksFixtures[smi]);
+      if (smTip) allTips.push(smTip);
+    }
+    console.log('[SPORTMONKS] Generated tips from ' + cachedSportMonksFixtures.length + ' fixtures');
   }
   for (var ti = 0; ti < allTips.length; ti++) mergeTip(allTips[ti]);
   saveTrackedTips();
@@ -1773,7 +1811,7 @@ function buildHorseRacingTip(event) {
 // === DARTS (SportDevs free API: 300 req/day) ===
 var cachedDartsFixtures = [];
 var dartsFetchDate = '';
-const DARTS_FIXTURES_FILE = path.join(__dirname, 'data', 'darts_fixtures.json');
+const DARTS_FIXTURES_FILE = path.join(DATA_DIR, 'darts_fixtures.json');
 
 function loadDartsFixtures() { cachedDartsFixtures = loadJSON(DARTS_FIXTURES_FILE, []); }
 function saveDartsFixtures() { saveJSON(DARTS_FIXTURES_FILE, cachedDartsFixtures); }
@@ -1914,6 +1952,170 @@ function buildDartsTip(fixture) {
     conf: Math.min(cfg.maxConf, Math.max(cfg.minConf, confidence)),
     realOdds: null, bookmaker: '', valueBet: false,
     reason: reason, features: features
+  };
+}
+
+// === SPORTMONKS API (Football data + live scores) ===
+var cachedSportMonksFixtures = [];
+var sportMonksFetchDate = '';
+const SPORTMONKS_FIXTURES_FILE = path.join(DATA_DIR, 'sportmonks_fixtures.json');
+const SPORTMONKS_LEAGUE_MAP = {
+  8: 'soccer_epl',       // Premier League
+  5: 'soccer_epl',       // La Liga
+  82: 'soccer_epl',      // Bundesliga
+  28: 'soccer_epl',      // Ligue 1
+  55: 'soccer_epl',      // Serie A
+  7: 'soccer_epl',       // Champions League
+  693: 'soccer_epl',     // Europa League
+  242: 'soccer_fifa_world_cup', // World Cup Qualifiers
+  1: 'soccer_fifa_world_cup'    // International
+};
+
+function loadSportMonksFixtures() { cachedSportMonksFixtures = loadJSON(SPORTMONKS_FIXTURES_FILE, []); }
+function saveSportMonksFixtures() { saveJSON(SPORTMONKS_FIXTURES_FILE, cachedSportMonksFixtures); }
+
+async function fetchSportMonksFixtures() {
+  var today = new Date().toISOString().slice(0, 10);
+  if (sportMonksFetchDate === today && cachedSportMonksFixtures.length > 0) return;
+  if (!SPORTMONKS_API_KEY) return;
+  loadSportMonksFixtures();
+  if (sportMonksFetchDate === today && cachedSportMonksFixtures.length > 0) return;
+
+  try {
+    // Fetch today's fixtures with participating teams and scores
+    var now = Math.floor(Date.now() / 1000);
+    var todayStart = new Date(today + 'T00:00:00Z').getTime() / 1000;
+    var todayEnd = todayStart + 86400;
+    var url = SPORTMONKS_API_BASE + '/fixtures?api_token=' + SPORTMONKS_API_KEY +
+      '&include=participants;league;scores;periods' +
+      '&filter=starting_at_timestamp:' + todayStart + ',' + todayEnd;
+    var res = await fetch(url, { timeout: 15000 });
+    if (!res.ok) {
+      console.log('[SPORTMONKS] HTTP ' + res.status);
+      // Fallback: try without filter
+      var fallbackUrl = SPORTMONKS_API_BASE + '/fixtures?api_token=' + SPORTMONKS_API_KEY +
+        '&include=participants;league;scores&take=20&sort=starting_at';
+      res = await fetch(fallbackUrl, { timeout: 15000 });
+      if (!res.ok) { console.log('[SPORTMONKS] Fallback also failed: ' + res.status); return; }
+    }
+    var data = await res.json();
+    if (!data.data || !Array.isArray(data.data)) { console.log('[SPORTMONKS] No fixture data'); return; }
+
+    var fixtures = [];
+    for (var fi = 0; fi < data.data.length; fi++) {
+      var fx = data.data[fi];
+      if (!fx.participants || fx.participants.length < 2) continue;
+      var homeP = fx.participants.find(function(p) { return p.meta && p.meta.location === 'home'; }) || fx.participants[0];
+      var awayP = fx.participants.find(function(p) { return p.meta && p.meta.location === 'away'; }) || fx.participants[1];
+      if (!homeP || !awayP) continue;
+      var leagueId = fx.league_id || 0;
+      var leagueName = fx.league ? fx.league.name : 'Football';
+      var sportKey = SPORTMONKS_LEAGUE_MAP[leagueId] || 'soccer_epl';
+      var homeScore = 0, awayScore = 0, status = 'NS';
+      if (fx.scores && fx.scores.length > 0) {
+        for (var si = 0; si < fx.scores.length; si++) {
+          var sc = fx.scores[si];
+          if (sc.description === 'FULL_TIME' || sc.description === '2ND_HALF') {
+            homeScore = sc.home || 0;
+            awayScore = sc.away || 0;
+            break;
+          }
+        }
+      }
+      if (fx.state_id === 5) status = 'FT';
+      else if (fx.state_id === 1) status = 'LIVE';
+      else if (fx.state_id === 2) status = 'HT';
+
+      fixtures.push({
+        id: 'sm-' + fx.id,
+        home: homeP.name || 'Home',
+        away: awayP.name || 'Away',
+        league: leagueName,
+        leagueId: leagueId,
+        sportKey: sportKey,
+        kickoff: fx.starting_at || '',
+        homeScore: homeScore,
+        awayScore: awayScore,
+        status: status,
+        isLive: fx.state_id === 1 || fx.state_id === 2
+      });
+    }
+
+    cachedSportMonksFixtures = fixtures;
+    sportMonksFetchDate = today;
+    saveSportMonksFixtures();
+    console.log('[SPORTMONKS] Fetched ' + fixtures.length + ' fixtures (' + fixtures.filter(function(f) { return f.isLive; }).length + ' live)');
+  } catch (e) {
+    console.log('[SPORTMONKS] Error: ' + (e.message || e).slice(0, 200));
+    sportMonksFetchDate = today;
+  }
+}
+
+function buildSportMonksTip(fixture) {
+  if (fixture.status === 'FT') return null;
+  var sportKey = fixture.sportKey || 'soccer_epl';
+  var cfg = getCfg(sportKey);
+  var home = fixture.home, away = fixture.away;
+  if (!home || !away) return null;
+
+  var hStats = getAttackDefense(sportKey, home, true);
+  var aStats = getAttackDefense(sportKey, away, false);
+  var poisson = dcPoissonPrediction(hStats.attack, hStats.defense, aStats.attack, aStats.defense, sportKey);
+  var fmHome = formModifier(sportKey, home);
+  var fmAway = formModifier(sportKey, away);
+  var adjH = Math.max(1000, Math.min(2000, getElo(sportKey, home) + HOME_ADVANTAGE_ELO + fmHome));
+  var adjA = Math.max(1000, Math.min(2000, getElo(sportKey, away) + fmAway));
+  var eloHome = expectedScore(adjH, adjA);
+  var eloDraw = cfg.hasDraw ? 0.25 : 0;
+  var eloHW = eloHome * (1 - eloDraw);
+  var eloAW = (1 - eloHome) * (1 - eloDraw);
+  var w = getWeights(sportKey);
+
+  var predHW = poisson.homeWin * w.poissonWeight + eloHW * w.eloWeight;
+  var predAW = poisson.awayWin * w.poissonWeight + eloAW * w.eloWeight;
+  var predD = cfg.hasDraw ? (poisson.draw * w.poissonWeight + eloDraw * w.eloWeight) : 0;
+  var total = predHW + predAW + predD;
+  if (total > 0) { predHW /= total; predAW /= total; predD /= total; }
+
+  var features = buildFeatures(home, away, sportKey);
+  var rawLR = predictLR(sportKey, features);
+  if (rawLR !== null) {
+    var mlH = rawLR, mlA = 1 - rawLR;
+    predHW = predHW * 0.65 + mlH * 0.35;
+    predAW = predAW * 0.65 + mlA * 0.35;
+    total = predHW + predAW + predD;
+    if (total > 0) { predHW /= total; predAW /= total; predD /= total; }
+  }
+
+  var pick = '', conf = 0, odds = '0', mr = 'Match Result';
+  if (predHW > predAW && predHW > predD && predHW > 0.35) {
+    pick = home + ' to Win'; conf = Math.round(predHW * 100);
+    odds = predHW > 0.05 ? (1 / predHW * 0.92).toFixed(2) : '1.50';
+  } else if (predAW > predHW && predAW > predD && predAW > 0.35) {
+    pick = away + ' to Win'; conf = Math.round(predAW * 100);
+    odds = predAW > 0.05 ? (1 / predAW * 0.92).toFixed(2) : '1.50';
+  } else if (cfg.hasDraw && predD > 0.25) {
+    return null;
+  } else {
+    return null;
+  }
+  conf = Math.min(cfg.maxConf, Math.max(cfg.minConf, calibrateConfidence(conf)));
+
+  var rc = [];
+  if (hStats.source === 'standings') rc.push('REAL');
+  rc.push('SM');
+  if (rawLR !== null) rc.push('ML');
+  rc.push('Pois+' + poisson.expectedHomeGoals.toFixed(1) + '-' + poisson.expectedAwayGoals.toFixed(1));
+  rc.push('Elo ' + Math.round(adjH) + 'v' + Math.round(adjA));
+
+  return {
+    type: sportKey, sport: 'Football', icon: '\u26BD',
+    match: home + ' vs ' + away, league: fixture.league || 'Football',
+    country: COUNTRY_MAP[sportKey] || '',
+    marketType: 'h2h', market: mr, marketLine: null,
+    kickoff: fixture.kickoff, pick: pick, odds: odds, conf: conf,
+    realOdds: null, bookmaker: '', valueBet: false,
+    reason: 'AI [' + mr + '] ' + rc.join(' | '), features: features
   };
 }
 
@@ -2352,9 +2554,11 @@ function startTelegramBot() {
 
 // Auth (rate limited: 10 requests per 15 min per IP)
 app.post('/api/auth/register', rateLimit(15 * 60 * 1000, 10), function(req, res) {
-  var username = (req.body.username || '').trim().toLowerCase();
+  var username = sanitizeInput(req.body.username);
   var password = req.body.password || '';
-  if (!username || !password || username.length < 3 || password.length < 4) return res.status(400).json({ error: 'Username (3+ chars) and password (4+ chars) required' });
+  if (!USERNAME_REGEX.test(username)) return res.status(400).json({ error: 'Username must be 3-20 alphanumeric characters or underscores' });
+  if (!password || password.length < 8) return res.status(400).json({ error: 'Password must be 8+ characters with uppercase, lowercase, and number' });
+  if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) return res.status(400).json({ error: 'Password must include uppercase, lowercase, and a number' });
   var users = loadUsers();
   if (users[username]) return res.status(409).json({ error: 'Username taken' });
   users[username] = { id: 'user-' + Date.now(), username: username, password: hashPassword(password), tier: 'free', role: 'user', createdAt: new Date().toISOString(), subs: {} };
@@ -2751,8 +2955,8 @@ app.post('/api/auth/forgot-password', function(req, res) {
   users[username].resetToken = resetToken;
   users[username].resetExpires = Date.now() + 3600000;
   saveUsers(users);
-  console.log('[AUTH] Password reset requested for ' + username + ' — token: ' + resetToken);
-  res.json({ success: true, message: 'Use this reset token: ' + resetToken + ' (valid 1 hour)' });
+  console.log('[AUTH] Password reset requested for ' + username + ' (token hidden)');
+  res.json({ success: true, message: 'Reset token generated. Use /api/auth/reset-password to reset.' });
 });
 
 app.post('/api/auth/reset-password', function(req, res) {
@@ -2778,15 +2982,18 @@ app.post('/api/subscribe', authMiddleware, function(req, res) {
   var user = users[req.user.username];
   if (!user) return res.status(401).json({ error: 'User not found' });
   if (user.tier !== 'free') return res.status(400).json({ error: 'Already subscribed. Contact admin to change tier.' });
-  // Notify admin via Telegram (or fallback to console)
-  var msg = '💰 Subscription request: @' + req.user.username + ' wants ' + tier + ' plan (R' + TIERS[tier].price + ')';
+  var paymentRef = req.body.paymentRef || '';
+  if (!paymentRef || paymentRef.length < 5) return res.status(400).json({ error: 'Payment reference required. Complete payment first.' });
+  var msg = 'Subscription request: @' + req.user.username + ' wants ' + tier + ' plan (R' + TIERS[tier].price + ') ref: ' + paymentRef;
   console.log('[SUB] ' + msg);
-  if (TELEGRAM_BOT_TOKEN) {
-    loadTelegramSubs().forEach(function(s) { sendTelegram(s.chatId, msg); });
-  }
   user.tier = tier;
+  user.subscribedAt = new Date().toISOString();
+  user.paymentRef = paymentRef;
   saveUsers(users);
-  res.json({ success: true, tier: tier, message: 'Upgraded to ' + tier + '. Payment integration coming soon.' });
+  if (TELEGRAM_BOT_TOKEN) {
+    loadTelegramSubs().forEach(function(s) { sendTelegram(s.chatId, 'New subscriber: @' + req.user.username + ' → ' + tier); });
+  }
+  res.json({ success: true, tier: tier, message: 'Upgraded to ' + tier + '.' });
 });
 
 const ADMIN_PHONE = '27677834591';
@@ -2901,7 +3108,7 @@ async function sendDailyBroadcast() {
     }
   }
   var waUrl = 'https://wa.me/' + ADMIN_PHONE + '?text=' + encodeURIComponent(plainMsg);
-  saveJSON(path.join(__dirname, 'data', 'last_broadcast.json'), { sentAt: new Date().toISOString(), tipCount: upcoming.length, whatsappDelivered: waSent, message: msg, whatsappUrl: waUrl });
+  saveJSON(path.join(DATA_DIR, 'last_broadcast.json'), { sentAt: new Date().toISOString(), tipCount: upcoming.length, whatsappDelivered: waSent, message: msg, whatsappUrl: waUrl });
 }
 
 function scheduleDailyBroadcast() {
@@ -2928,9 +3135,10 @@ app.get('/api/admin/users', authMiddleware, adminMiddleware, function(req, res) 
 });
 
 app.post('/api/admin/set-tier', authMiddleware, adminMiddleware, function(req, res) {
-  var targetUser = (req.body.username || '').trim().toLowerCase();
+  var targetUser = sanitizeInput(req.body.username);
   var newTier = req.body.tier;
-  if (!targetUser || !newTier || !TIERS[newTier]) return res.status(400).json({ error: 'Username and valid tier required (free, starter, pro, elite)' });
+  if (!targetUser || !USERNAME_REGEX.test(targetUser)) return res.status(400).json({ error: 'Invalid username (3-20 alphanumeric/underscore chars)' });
+  if (!newTier || !TIERS[newTier]) return res.status(400).json({ error: 'Valid tier required (free, starter, pro, elite)' });
   var users = loadUsers();
   if (!users[targetUser]) return res.status(404).json({ error: 'User not found' });
   var oldTier = users[targetUser].tier;
@@ -2943,8 +3151,8 @@ app.post('/api/admin/set-tier', authMiddleware, adminMiddleware, function(req, r
 });
 
 app.post('/api/admin/delete-user', authMiddleware, adminMiddleware, function(req, res) {
-  var targetUser = (req.body.username || '').trim().toLowerCase();
-  if (!targetUser) return res.status(400).json({ error: 'Username required' });
+  var targetUser = sanitizeInput(req.body.username);
+  if (!targetUser || !USERNAME_REGEX.test(targetUser)) return res.status(400).json({ error: 'Invalid username' });
   var users = loadUsers();
   if (!users[targetUser]) return res.status(404).json({ error: 'User not found' });
   if (users[targetUser].role === 'admin') return res.status(403).json({ error: 'Cannot delete admin' });
@@ -3077,10 +3285,10 @@ app.use(function(err, req, res, next) {
 
 loadTrackedTips(); loadElo(); loadForm(); loadWeights(); loadCalibration(); loadTeamStats(); loadH2H(); loadMatchDates(); loadModelCoeffs(); loadFeatureLogs(); loadSportHealth(); loadCachedOdds(); loadRacingEvents();
 refreshTips();
-setInterval(refreshTips, 60000);
+setInterval(refreshTips, 300000);
 setInterval(checkResults, 300000);
-setInterval(function() { loadFeatureLogs(); for (var si = 0; si < SPORTS.length; si++) trainSportModel(SPORTS[si].key); }, 1800000);
-setInterval(function() { loadTrackedTips(); checkSportHealth(); }, 1800000);
+setInterval(function() { cleanResearchCache(); cleanRevokedTokens(); }, 3600000);
+setInterval(function() { loadTrackedTips(); loadFeatureLogs(); for (var si = 0; si < SPORTS.length; si++) trainSportModel(SPORTS[si].key); checkSportHealth(); }, 1800000);
 
 app.get('/health', function(req, res) { res.json({ status: 'ok', uptime: process.uptime() }); });
 
@@ -3089,7 +3297,7 @@ app.listen(port, function() {
   if (TELEGRAM_BOT_TOKEN) console.log('[TELEGRAM] Bot enabled (long-polling mode)');
   if (WHATSAPP_INSTANCE_ID) console.log('[WHATSAPP] UltraMsg enabled — daily broadcast to ' + ADMIN_WHATSAPP);
   else console.log('[WHATSAPP] UltraMsg not configured — add WHATSAPP_INSTANCE_ID + WHATSAPP_TOKEN to .env');
-  console.log('[AUTH] Admin login: ' + ADMIN_USER + ' / ' + ADMIN_PASS);
+  console.log('[AUTH] Admin account: ' + ADMIN_USER);
   console.log('[AI] Dixon-Coles Poisson + Real football-data.org standings + form + H2H + fatigue tracking loaded');
   startTelegramBot();
   scheduleDailyBroadcast();

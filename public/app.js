@@ -604,12 +604,14 @@ function renderAdminUsers(users) {
   var html = '';
   for (var i = 0; i < users.length; i++) {
     var u = users[i];
-    var roleIcon = u.role === 'admin' ? '<span style="margin-right:4px;">👑</span>' : '';
+    var safeName = u.username.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    var safeTier = u.tier.replace(/[^a-z]/g, '');
+    var roleIcon = u.role === 'admin' ? '<span style="margin-right:4px;">&#x1F451;</span>' : '';
     var created = u.createdAt ? new Date(u.createdAt).toLocaleDateString('en-ZA') : '';
-    html += '<div class="admin-user-row" onclick="selectAdminUser(\'' + u.username + '\',\'' + u.tier + '\')">' +
-      '<div style="display:flex;align-items:center;gap:8px;min-width:0;"><span style="font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + roleIcon + u.username + '</span> <span class="tier-badge tier-' + u.tier + '">' + u.tier + '</span></div>' +
+    html += '<div class="admin-user-row" onclick="selectAdminUser(\'' + safeName + '\',\'' + safeTier + '\')">' +
+      '<div style="display:flex;align-items:center;gap:8px;min-width:0;"><span style="font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + roleIcon + safeName + '</span> <span class="tier-badge tier-' + safeTier + '">' + safeTier + '</span></div>' +
       '<div style="display:flex;gap:8px;align-items:center;flex-shrink:0;"><span style="color:var(--muted);font-size:11px;">' + created + '</span>' +
-      '<select class="admin-select" style="padding:4px 8px;font-size:11px;min-height:auto;" onclick="event.stopPropagation()" onchange="quickSetTier(\'' + u.username + '\',this.value)">' +
+      '<select class="admin-select" style="padding:4px 8px;font-size:11px;min-height:auto;" onclick="event.stopPropagation()" onchange="quickSetTier(\'' + safeName + '\',this.value)">' +
       '<option value="free"' + (u.tier === 'free' ? ' selected' : '') + '>Free</option>' +
       '<option value="starter"' + (u.tier === 'starter' ? ' selected' : '') + '>Starter</option>' +
       '<option value="pro"' + (u.tier === 'pro' ? ' selected' : '') + '>Pro</option>' +
@@ -917,7 +919,7 @@ function updateLiveScores() {
     var matchText = match.textContent;
     for (var key in LIVE_SCORES) {
       var score = LIVE_SCORES[key];
-      if (matchText.indexOf(score.homeScore) !== -1 || true) {
+      if (matchText.indexOf(score.homeScore) !== -1 && matchText.indexOf(score.awayScore) !== -1) {
         var tipIdx = parseInt(card.getAttribute('data-idx'), 10);
         var upcoming = ALL_TIPS.filter(function(t){ return !isPast(t.kickoff) && t.conf>=68; });
         if (upcoming[tipIdx]) {

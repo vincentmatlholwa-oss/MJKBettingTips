@@ -13,7 +13,7 @@ self.addEventListener('activate', function(e) {
 
 self.addEventListener('fetch', function(e) {
   if (e.request.url.indexOf('/api/') >= 0) {
-    e.respondWith(fetch(e.request).catch(function() { return caches.match(e.request); }));
+    e.respondWith(fetch(e.request));
   } else {
     e.respondWith(caches.match(e.request).then(function(cached) {
       return cached || fetch(e.request).then(function(resp) {
