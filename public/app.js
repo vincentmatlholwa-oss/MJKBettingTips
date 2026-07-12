@@ -123,10 +123,12 @@ function updateAuthUI() {
   var loginBtn = document.getElementById('loginBtn');
   var registerBtn = document.getElementById('registerBtn');
   var userMenu = document.getElementById('userMenu');
+  var bottomAuthBtn = document.getElementById('bottomAuthBtn');
   if (currentUser) {
     if (loginBtn) loginBtn.style.display = 'none';
     if (registerBtn) registerBtn.style.display = 'none';
     if (userMenu) { userMenu.style.display = ''; document.getElementById('userName').textContent = currentUser.username; }
+    if (bottomAuthBtn) { bottomAuthBtn.querySelector('span').textContent = currentUser.username; bottomAuthBtn.onclick = function() { showSection('dashboard'); }; }
     var badge = document.getElementById('userTierBadge');
     if (badge) { badge.textContent = currentUser.tier.charAt(0).toUpperCase() + currentUser.tier.slice(1); badge.className = 'tier-badge tier-' + currentUser.tier; }
     var header = document.getElementById('dropdownHeader');
@@ -140,6 +142,7 @@ function updateAuthUI() {
     if (loginBtn) loginBtn.style.display = '';
     if (registerBtn) registerBtn.style.display = '';
     if (userMenu) userMenu.style.display = 'none';
+    if (bottomAuthBtn) { bottomAuthBtn.querySelector('span').textContent = 'Login'; bottomAuthBtn.onclick = function() { showAuthModal('login'); }; }
     var note = document.getElementById('tipLimitNote');
     if (note) note.innerHTML = '3 free tips shown. <a href="#" onclick="showAuthModal(\'register\')" style="color:var(--cyan)">Register</a> for more tips.';
   }
@@ -163,10 +166,14 @@ function toggleUserDropdown() {
   if (dd) dd.classList.toggle('open');
   if (um) um.classList.toggle('open');
 }
+var _closeAuthTimer = null;
 function showAuthModal(mode) {
+  if (_closeAuthTimer) { clearTimeout(_closeAuthTimer); _closeAuthTimer = null; }
   var m = document.getElementById('authModal');
   if (!m) return;
   m.style.display = 'flex';
+  m.style.opacity = '1';
+  m.style.pointerEvents = 'all';
   setTimeout(function() { m.classList.add('open'); }, 10);
   document.getElementById('authTitle').textContent = mode === 'login' ? 'Login' : 'Register';
   document.getElementById('authBtn').textContent = mode === 'login' ? 'Login' : 'Register';
@@ -231,7 +238,16 @@ function closeAuth() {
   var m = document.getElementById('authModal');
   var oddsContent = document.getElementById('oddsCompareContent');
   if (oddsContent) oddsContent.remove();
-  if (m) { m.classList.remove('open'); setTimeout(function() { m.style.display = 'none'; }, 300); }
+  if (m) {
+    m.classList.remove('open');
+    if (_closeAuthTimer) clearTimeout(_closeAuthTimer);
+    _closeAuthTimer = setTimeout(function() {
+      m.style.display = 'none';
+      m.style.opacity = '0';
+      m.style.pointerEvents = 'none';
+      _closeAuthTimer = null;
+    }, 300);
+  }
 }
 function handleAuth() {
   var username = document.getElementById('authUsername').value.trim();
@@ -810,7 +826,7 @@ function renderTip(t, accaIdx) {
   }
   var valueBadge = t.valueBet ? '<span class="value-badge">VALUE BET</span>' : '';
   var btn = accaIdx !== undefined ? '<button class="add-acca-btn" id="ab'+accaIdx+'" onclick="toggleAcca('+accaIdx+')">+ Add to Acca</button>' : '';
-  var oddsBtn = '<button class="add-acca-btn" style="background:rgba(0,200,255,.08);border-color:rgba(0,200,255,.3);color:var(--cyan);" onclick="showOddsCompare(\''+encodeURIComponent(t.match)+'\',\''+(t.type||'soccer_epl')+'\',\''+encodeURIComponent(t.match)+'\')">📊 Compare Odds</button>';
+  var oddsBtn = '<button class="add-acca-btn" style="background:rgba(0,200,255,.08);border-color:rgba(0,200,255,.3);color:var(--cyan);" onclick="showOddsComparison(\''+encodeURIComponent(t.match)+'\',\''+(t.type||'soccer_epl')+'\',\''+encodeURIComponent(t.match)+'\')">📊 Compare Odds</button>';
   var shareBtn = '<div class="tip-share-row"><button class="share-btn share-wa" onclick="shareTip(\'' + encodeURIComponent(t.match) + '\',\'' + encodeURIComponent(t.pick + ' @ ' + t.odds + ' (' + t.conf + '%)') + '\',\'whatsapp\')">WhatsApp</button><button class="share-btn share-tw" onclick="shareTip(\'' + encodeURIComponent(t.match) + '\',\'' + encodeURIComponent(t.pick + ' @ ' + t.odds + ' (' + t.conf + '%)') + '\',\'twitter\')">Twitter</button><button class="share-btn share-copy" onclick="shareTip(\'' + encodeURIComponent(t.match) + '\',\'' + encodeURIComponent(t.pick + ' @ ' + t.odds + ' (' + t.conf + '%)') + '\',\'copy\')">Copy</button></div>';
   var leagueHtml = t.league ? '<span class="league-chip">'+t.league+'</span>' : '';
   var countryHtml = country ? '<span class="country-chip">'+country+'</span>' : '';

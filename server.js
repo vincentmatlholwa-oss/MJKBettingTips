@@ -64,6 +64,7 @@ const HORSE_RACING_API_KEY = process.env.HORSE_RACING_API_KEY || ''; // Reserved
 const HORSE_RACING_API_BASE = 'https://api.odds-api.net/v1';
 const RACING_JSON_URL = 'https://www.racingandsports.com.au/todays-racing-json-v2';
 const RACING_FORM_BASE = 'https://www.racingandsports.com.au/form-guide';
+const TAB_NEWS_URL = 'https://news.tab.co.za';
 
 const SPORTS = [
   { key: 'soccer_fifa_world_cup', name: 'FIFA World Cup', icon: '\u26BD' },
@@ -74,8 +75,7 @@ const SPORTS = [
   { key: 'rugbyleague_nrl', name: 'NRL', icon: '\uD83C\uDFC9' },
   { key: 'baseball_mlb', name: 'MLB', icon: '\u26BE' },
   { key: 'aussierules_afl', name: 'AFL', icon: '\uD83C\uDFC9' },
-  { key: 'cricket_international_t20', name: 'T20 Cricket', icon: '\uD83C\uDFCF' },
-  { key: 'horse_racing', name: 'Horse Racing', icon: '\uD83C\uDFC7' }
+  { key: 'cricket_international_t20', name: 'T20 Cricket', icon: '\uD83C\uDFCF' }
 ];
 
 const COUNTRY_MAP = {
@@ -352,8 +352,8 @@ async function researchTeamStats(teamName) {
             var hg = isHome ? m.score.fullTime.home : m.score.fullTime.away;
             var ag = isHome ? m.score.fullTime.away : m.score.fullTime.home;
             var opp = isHome ? (m.awayTeam ? m.awayTeam.name : '?') : (m.homeTeam ? m.homeTeam.name : '?');
-            var result = hg > ag ? 'W' : (hg < ag ? 'L' : 'D');
-            formResults.push({ opponent: opp, score: hg + '-' + ag, result: result, date: m.utcDate });
+            var matchResult = hg > ag ? 'W' : (hg < ag ? 'L' : 'D');
+            formResults.push({ opponent: opp, score: hg + '-' + ag, result: matchResult, date: m.utcDate });
           }
           result.recentForm = formResults;
           result.formString = formResults.map(function(r) { return r.result; }).join('');
@@ -1432,10 +1432,105 @@ function mapFootballDataFixture(match) {
 
 // === HORSE RACING (HKJC — free, no API key) ===
 var cachedRacingEvents = [];
+var cachedTabSelections = {}; // Parsed TAB news race-by-race selections { 'Greyville': { 1: [{no:4,name:'Molten Rock'},...], ... } }
+var tabSelectionsDate = '';
 function loadRacingEvents() { cachedRacingEvents = loadJSON(RACING_EVENTS_FILE, []); }
 function saveRacingEvents() { saveJSON(RACING_EVENTS_FILE, cachedRacingEvents); }
 
+// Scrape TAB news for daily race-by-race selections (horse names + numbers)
+async function fetchTabSelections() {
+  var today = new Date().toISOString().slice(0, 10);
+  if (tabSelectionsDate === today && Object.keys(cachedTabSelections).length > 0) return;
+  try {
+    // Step 1: Fetch TAB news homepage to find latest racing article
+    var homeRes = await fetch(TAB_NEWS_URL, { timeout: 10000, headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' } });
+    if (!homeRes.ok) return;
+    var homeHtml = await homeRes.text();
+    // Find article links that contain racing selections (look for "Race 1:" pattern hints — articles about today's racing)
+    var articleUrls = [];
+    var linkRegex = /href="(https?:\/\/news\.tab\.co\.za\/[^"]+\/)"/gi;
+    var match;
+    while ((match = linkRegex.exec(homeHtml)) !== null) {
+      if (articleUrls.indexOf(match[1]) === -1) articleUrls.push(match[1]);
+    }
+    // Also try relative links
+    var relRegex = /href="(\/[^"]+\/)"/gi;
+    while ((match = relRegex.exec(homeHtml)) !== null) {
+      var full = TAB_NEWS_URL + match[1];
+      if (articleUrls.indexOf(full) === -1) articleUrls.push(full);
+    }
+
+    // Step 2: Try each article until we find one with race-by-race selections
+    for (var ai = 0; ai < Math.min(articleUrls.length, 8); ai++) {
+      try {
+        var artRes = await fetch(articleUrls[ai], { timeout: 8000, headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' } });
+        if (!artRes.ok) continue;
+        var artHtml = await artRes.text();
+        // Strip HTML tags to get plain text
+        var text = artHtml.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+        // Look for race-by-race selections pattern: "Race N: NN Horse Name, NN Horse Name"
+        var racePattern = /Race\s+(\d{1,2})\s*:\s*((?:\d{1,2}\s+[A-Z][a-zA-Z\s'.-]+?)(?:,\s*\d{1,2}\s+[A-Z][a-zA-Z\s'.-]+?)*)/gi;
+        var selections = {};
+        var venue = '';
+        // Try to extract venue from article title or content
+        var venueMatch = text.match(/(?:at|Racecourse?)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/i) || artHtml.match(/<title[^>]*>([^<]+)/i);
+        if (venueMatch) venue = venueMatch[1] || '';
+        // Normalize common venue names
+        var venueLower = venue.toLowerCase();
+        if (venueLower.indexOf('greyville') >= 0 || venueLower.indexOf('grey') >= 0) venue = 'Greyville';
+        else if (venueLower.indexOf('turffontein') >= 0 || venueLower.indexOf('turf') >= 0) venue = 'Turffontein';
+        else if (venueLower.indexOf('kenilworth') >= 0) venue = 'Kenilworth';
+        else if (venueLower.indexOf('fairview') >= 0) venue = 'Fairview';
+        else if (venueLower.indexOf('vaal') >= 0) venue = 'Vaal';
+        else if (venueLower.indexOf('scottsville') >= 0) venue = 'Scottsville';
+
+        var raceMatch;
+        while ((raceMatch = racePattern.exec(text)) !== null) {
+          var raceNo = parseInt(raceMatch[1]);
+          var picks = raceMatch[2].split(',').map(function(p) {
+            p = p.trim();
+            var numMatch = p.match(/^(\d{1,2})\s+(.+)/);
+            if (numMatch) return { no: parseInt(numMatch[1]), name: numMatch[2].trim() };
+            return null;
+          }).filter(Boolean);
+          if (picks.length > 0) selections[raceNo] = picks;
+        }
+        // Also extract BEST BET and VALUE BET
+        var bestBetMatch = text.match(/BEST\s+BET\s*(?:\([^)]*\))?\s*[:\s]*Race\s+(\d{1,2})\s*:\s*(\d{1,2})\s+([A-Z][a-zA-Z\s'.-]+)/i);
+        var valueBetMatch = text.match(/VALUE\s+BET\s*(?:\([^)]*\))?\s*[:\s]*Race\s+(\d{1,2})\s*:\s*(\d{1,2})\s+([A-Z][a-zA-Z\s'.-]+)/i);
+        if (bestBetMatch && selections[parseInt(bestBetMatch[1])]) {
+          var bbRace = parseInt(bestBetMatch[1]);
+          var bbNo = parseInt(bestBetMatch[2]);
+          var bbName = bestBetMatch[3].trim();
+          if (!selections[bbRace].find(function(s) { return s.no === bbNo; })) {
+            selections[bbRace].unshift({ no: bbNo, name: bbName });
+          }
+          selections._bestBet = { race: bbRace, no: bbNo, name: bbName };
+        }
+        if (valueBetMatch && selections[parseInt(valueBetMatch[1])]) {
+          var vbRace = parseInt(valueBetMatch[1]);
+          var vbNo = parseInt(valueBetMatch[2]);
+          var vbName = valueBetMatch[3].trim();
+          selections._valueBet = { race: vbRace, no: vbNo, name: vbName };
+        }
+
+        if (Object.keys(selections).length > 0) {
+          cachedTabSelections[venue || 'Unknown'] = selections;
+          console.log('[TAB] Parsed selections for ' + (venue || 'Unknown') + ': ' + Object.keys(selections).filter(function(k) { return k !== '_bestBet' && k !== '_valueBet'; }).length + ' races');
+        }
+      } catch (e) { /* skip failed article */ }
+    }
+    if (Object.keys(cachedTabSelections).length > 0) {
+      tabSelectionsDate = today;
+      console.log('[TAB] Total venues with selections: ' + Object.keys(cachedTabSelections).length);
+    }
+  } catch (e) { console.log('[TAB] Error: ' + (e.message || e)); }
+}
+
 async function fetchHorseRacing() {
+  // First, scrape TAB news for daily expert selections (horse names)
+  await fetchTabSelections();
+
   // Source 1: racingandsports.com.au free JSON (no auth required)
   try {
     var res = await fetch(RACING_JSON_URL, {
@@ -1484,10 +1579,43 @@ async function fetchHorseRacing() {
       });
       // Take top 15 races
       races = races.slice(0, 15);
+      // Merge TAB selections into runners for SA races
+      if (Object.keys(cachedTabSelections).length > 0) {
+        for (var ri = 0; ri < races.length; ri++) {
+          var race = races[ri];
+          if (race.countryCode !== 'SAF') continue;
+          var trackKey = race.track;
+          // Try exact match, then partial match
+          var tabVenue = cachedTabSelections[trackKey];
+          if (!tabVenue) {
+            var trackLower = trackKey.toLowerCase();
+            var keys = Object.keys(cachedTabSelections);
+            for (var ki = 0; ki < keys.length; ki++) {
+              if (keys[ki].toLowerCase().indexOf(trackLower) >= 0 || trackLower.indexOf(keys[ki].toLowerCase()) >= 0) {
+                tabVenue = cachedTabSelections[keys[ki]];
+                break;
+              }
+            }
+          }
+          if (tabVenue && tabVenue[race.raceNumber]) {
+            race.runners = tabVenue[race.raceNumber].map(function(s) {
+              return { name: s.name, horseNo: s.no, odds: 0, book: 'TAB Expert' };
+            });
+            // Mark best/value bet
+            if (tabVenue._bestBet && tabVenue._bestBet.race === race.raceNumber) {
+              race.bestBet = tabVenue._bestBet;
+            }
+            if (tabVenue._valueBet && tabVenue._valueBet.race === race.raceNumber) {
+              race.valueBet = tabVenue._valueBet;
+            }
+          }
+        }
+      }
       if (races.length > 0) {
         cachedRacingEvents = races;
         saveRacingEvents();
-        console.log('[HORSE] Fetched ' + races.length + ' races from racingandsports.com.au (' + races.filter(function(r) { return r.countryCode === 'SAF'; }).length + ' SA)');
+        var saWithRunners = races.filter(function(r) { return r.countryCode === 'SAF' && r.runners.length > 0; }).length;
+        console.log('[HORSE] Fetched ' + races.length + ' races from racingandsports.com.au (' + races.filter(function(r) { return r.countryCode === 'SAF'; }).length + ' SA, ' + saWithRunners + ' with TAB selections)');
         return;
       }
     }
@@ -1534,11 +1662,18 @@ function buildHorseRacingTip(event) {
   var raceNum = event.raceNumber || '';
   var formUrl = event.formUrl || '';
   var runners = event.runners || [];
+  var bestBet = event.bestBet || null;
+  var valueBet = event.valueBet || null;
 
   if (!time || new Date(time).getTime() < Date.now()) return null;
 
+  var isSA = event.countryCode === 'SAF';
+  var kickoffDate = new Date(time);
+  var timeStr = kickoffDate.toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg', hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' });
+  var countryFlag = isSA ? '\uD83C\uDDFF\uD83C\uDDE6' : (event.countryCode === 'AUS' ? '\uD83C\uDDE6\uD83C\uDDFA' : '\uD83C\uDDEC\uD83C\uDDE7');
+
   // If we have runners with odds, use the odds-based approach
-  if (runners.length >= 2) {
+  if (runners.length >= 2 && runners.some(function(r) { return parseFloat(r.odds) > 1; })) {
     var cfg = getCfg('horse_racing');
     var pick = null, bestProb = 0, bestOdds = 0, bestBook = '';
     for (var i = 0; i < runners.length; i++) {
@@ -1558,7 +1693,7 @@ function buildHorseRacingTip(event) {
       if (conf >= cfg.minConf) {
         return {
           type: 'horse_racing', sport: 'Horse Racing', icon: '\uD83C\uDFC7',
-          match: (track ? track + ' — ' : '') + name + dist,
+          match: countryFlag + ' ' + (track ? track + ' — ' : '') + 'Race ' + raceNum + dist,
           league: track || 'Horse Racing', country: country || 'International',
           marketType: 'h2h', market: 'Race Winner', marketLine: null,
           kickoff: time, pick: pick + ' to Win', odds: bestOdds.toFixed(2),
@@ -1570,21 +1705,53 @@ function buildHorseRacingTip(event) {
     }
   }
 
-  // Fallback: Race card without odds — show as upcoming race event
-  var isSA = event.countryCode === 'SAF';
-  var conf = isSA ? 72 : 65; // SA races get higher confidence (local relevance)
-  var kickoffDate = new Date(time);
-  var timeStr = kickoffDate.toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg', hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' });
+  // If we have TAB expert selections (horse names but no odds), use expert picks
+  if (runners.length >= 2 && runners[0].name) {
+    var cfg2 = getCfg('horse_racing');
+    // The first runner in the list is the expert's top pick
+    var topPick = runners[0];
+    var pickName = (topPick.horseNo ? '#' + topPick.horseNo + ' ' : '') + topPick.name;
+    // Count all runners listed
+    var runnerCount = runners.length;
+    // Build reason with all listed runners
+    var runnerList = runners.map(function(r) {
+      return (r.horseNo ? r.horseNo + ' ' : '') + r.name;
+    }).join(', ');
+    // Higher confidence for SA races with expert picks
+    var conf = isSA ? 78 : 70;
+    // Bonus if this is a best bet
+    if (bestBet) {
+      pickName = '\u2B50 ' + (bestBet.no ? '#' + bestBet.no + ' ' : '') + bestBet.name + ' (BEST BET)';
+      conf = Math.min(cfg2.maxConf, conf + 5);
+    }
+    var reasonText = 'TAB Expert Picks (' + runnerCount + ' runners) \u2014 ' + runnerList;
+    if (valueBet) {
+      reasonText += ' | Value: #' + valueBet.no + ' ' + valueBet.name;
+    }
+
+    return {
+      type: 'horse_racing', sport: 'Horse Racing', icon: '\uD83C\uDFC7',
+      match: countryFlag + ' ' + (track ? track + ' — ' : '') + 'Race ' + raceNum + dist,
+      league: track || 'Horse Racing', country: country || 'International',
+      marketType: 'h2h', market: 'Race Winner', marketLine: null,
+      kickoff: time, pick: pickName, odds: 'Expert Pick',
+      conf: conf, realOdds: null, bookmaker: 'TAB', valueBet: !!valueBet,
+      reason: reasonText,
+      features: [0, 0, 0, 0, 0, 0, 0, 1]
+    };
+  }
+
+  // Fallback: Race card without any runner data
+  var conf3 = isSA ? 72 : 65;
   var raceLabel = track + (raceNum ? ' — Race ' + raceNum : '');
-  var countryFlag = isSA ? '\uD83C\uDDFF\uD83C\uDDE6' : (event.countryCode === 'AUS' ? '\uD83C\uDDE6\uD83C\uDDFA' : '\uD83C\uDDEC\uD83C\uDDE7');
 
   return {
     type: 'horse_racing', sport: 'Horse Racing', icon: '\uD83C\uDFC7',
     match: countryFlag + ' ' + raceLabel,
     league: track || 'Horse Racing', country: country || 'International',
     marketType: 'h2h', market: 'Race Winner', marketLine: null,
-    kickoff: time, pick: 'View form guide for picks', odds: 'TBD',
-    conf: conf, realOdds: null, bookmaker: '', valueBet: false,
+    kickoff: time, pick: 'Runners to be confirmed', odds: 'TBD',
+    conf: conf3, realOdds: null, bookmaker: '', valueBet: false,
     reason: 'Horse racing card — ' + country + ' — ' + timeStr + (formUrl ? ' | ' + formUrl : ''),
     features: [0, 0, 0, 0, 0, 0, 0, 1]
   };

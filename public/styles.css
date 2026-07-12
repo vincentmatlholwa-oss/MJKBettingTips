@@ -71,6 +71,7 @@ input,select{font-family:inherit;}
 .bottom-nav-item svg{opacity:.5;transition:all .2s;}
 .bottom-nav-item.active{color:var(--cyan);}
 .bottom-nav-item.active svg{opacity:1;stroke:var(--cyan);}
+.bottom-nav-auth{color:var(--cyan);}
 
 /* === HERO === */
 .hero{position:relative;min-height:70vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:30px 16px 40px;overflow:hidden;}
