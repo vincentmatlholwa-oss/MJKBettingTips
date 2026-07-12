@@ -2472,6 +2472,15 @@ function buildBSDStandaloneTip(bsdKey) {
   if (parts.length !== 2) return null;
   var home = parts[0].trim();
   var away = parts[1].trim();
+  // Only show major leagues — skip obscure leagues
+  var leagueLower = (bsd.league || '').toLowerCase();
+  var majorLeagues = ['premier league', 'la liga', 'bundesliga', 'serie a', 'ligue 1', 'eredivisie',
+    'primeira liga', 'champions league', 'europa league', 'conference league',
+    'scottish premiership', 'belgian pro league', 'turkish super lig',
+    'brasileir', 'argentine', 'liga mx', 'mls',
+    'championship', ' league one', ' league two', 'soccer'];
+  var isMajor = majorLeagues.some(function(ml) { return leagueLower.indexOf(ml) !== -1; });
+  if (!isMajor) return null;
   // Skip if kickoff is in the past
   var kickoffTime = new Date(bsd.kickoff).getTime();
   if (!kickoffTime || kickoffTime <= Date.now()) return null;
@@ -2501,6 +2510,7 @@ function buildBSDStandaloneTip(bsdKey) {
   else if (leagueLower.indexOf('brasileir') !== -1 || leagueLower.indexOf('brazil') !== -1) { sportKey = 'soccer_brazil_serie_a'; country = 'Brazil'; }
   else if (leagueLower.indexOf('mls') !== -1 || leagueLower.indexOf('usa') !== -1 || leagueLower.indexOf('united states') !== -1) { sportKey = 'soccer_usa_mls'; country = 'USA'; }
   else if (leagueLower.indexOf('champions') !== -1) { sportKey = 'soccer_uefa_champs_league'; country = 'Europe'; }
+  else if (leagueLower.indexOf('conference') !== -1) { sportKey = 'soccer_uefa_europa_league'; country = 'Europe'; }
   else if (leagueLower.indexOf('europa') !== -1) { sportKey = 'soccer_uefa_europa_league'; country = 'Europe'; }
   else if (leagueLower.indexOf('premier') !== -1 || leagueLower.indexOf('england') !== -1 || leagueLower.indexOf('english') !== -1) { country = 'England'; }
   else if (leagueLower.indexOf('turkish') !== -1 || leagueLower.indexOf('turkey') !== -1) { country = 'Turkey'; }
