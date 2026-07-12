@@ -1258,7 +1258,7 @@ async function buildSoccerTip(oddsMatch, sport) {
   else if (ensembleResult.disagree) finalConf = Math.max(cfg.minConf, finalConf - 8);
   else finalConf = Math.max(cfg.minConf, finalConf - 3);
   var reason = 'AI [' + best.market + '] ' + rc.join(' | ');
-  return { type: sport.key, sport: sport.name, icon: sport.icon, match: home + ' vs ' + away, league: sport.name, country: COUNTRY_MAP[sport.key] || '', marketType: best.marketType, market: best.market, marketLine: best.line, kickoff: oddsMatch.commence_time, pick: best.pick, odds: best.odds, conf: finalConf, realOdds: consensus ? { home: consensus.bestHomePrice || null, away: consensus.bestAwayPrice || null, draw: consensus.bestDrawPrice || null } : null, bookmaker: best.bookmaker, valueBet: best.valueBet, reason: reason, features: features, bsdAgree: bsdPred ? ensembleResult.agree : null };
+  return { type: sport.key, sport: sport.name, icon: sport.icon, match: home + ' vs ' + away, league: sport.name, country: COUNTRY_MAP[sport.key] || '', marketType: best.marketType, market: best.market, marketLine: best.line, kickoff: oddsMatch.commence_time, pick: best.pick, odds: best.odds, conf: finalConf, realOdds: consensus ? { home: consensus.bestHomePrice || null, away: consensus.bestAwayPrice || null, draw: consensus.bestDrawPrice || null } : null, bookmaker: best.bookmaker, valueBet: best.valueBet, reason: reason, features: features, bsdAgree: bsdPred ? ensembleResult.agree : null, tripleAgree: ensembleResult.unanimous };
 }
 
 // === DEDICATED BASEBALL PREDICTION ENGINE ===
@@ -1394,7 +1394,7 @@ function buildNonSoccerTip(oddsMatch, sport) {
   else if (ensembleResult.disagree) finalConf2 = Math.max(cfg.minConf, finalConf2 - 8);
   else finalConf2 = Math.max(cfg.minConf, finalConf2 - 3);
   reason = 'AI' + dataSrc + (rawLR !== null ? ' ML' : '') + (bsdPred ? ' BSD' : '') + (afPred ? ' AF' : '') + (ensembleResult.unanimous ? ' UNANIMOUS' : ensembleResult.disagree ? ' DISAGREE' : '') + ' Elo ' + Math.round(adjustedElo) + 'v' + Math.round(adjustedEloA) + formNote + h2hNote + ' ' + consensus.totalBooks + 'books';
-  return { type: sport.key, sport: sport.name, icon: sport.icon, match: home + ' vs ' + away, league: sport.name, country: COUNTRY_MAP[sport.key] || '', marketType: 'h2h', market: cfg.hasDraw ? 'Match Result' : 'Match Winner', marketLine: null, kickoff: oddsMatch.commence_time, pick: tipText, odds: odds, conf: finalConf2, realOdds: { home: consensus.bestHomePrice || null, away: consensus.bestAwayPrice || null, draw: cfg.hasDraw ? (consensus.bestDrawPrice || null) : null }, bookmaker: bookmaker, valueBet: valueBet, reason: reason, features: features, bsdAgree: bsdPred ? ensembleResult.agree : null };
+  return { type: sport.key, sport: sport.name, icon: sport.icon, match: home + ' vs ' + away, league: sport.name, country: COUNTRY_MAP[sport.key] || '', marketType: 'h2h', market: cfg.hasDraw ? 'Match Result' : 'Match Winner', marketLine: null, kickoff: oddsMatch.commence_time, pick: tipText, odds: odds, conf: finalConf2, realOdds: { home: consensus.bestHomePrice || null, away: consensus.bestAwayPrice || null, draw: cfg.hasDraw ? (consensus.bestDrawPrice || null) : null }, bookmaker: bookmaker, valueBet: valueBet, reason: reason, features: features, bsdAgree: bsdPred ? ensembleResult.agree : null, tripleAgree: ensembleResult.unanimous };
 }
 
 function determineWin(tip, home, away, hScore, aScore) {
@@ -2533,7 +2533,8 @@ function buildSportMonksTip(fixture) {
     marketType: 'h2h', market: mr, marketLine: null,
     kickoff: fixture.kickoff, pick: pick, odds: odds, conf: conf,
     realOdds: null, bookmaker: '', valueBet: false,
-    reason: 'AI [' + mr + '] ' + rc.join(' | '), features: features
+    reason: 'AI [' + mr + '] ' + rc.join(' | '), features: features,
+    bsdAgree: bsdPred2 ? ensembleR2.agree : null, tripleAgree: ensembleR2.unanimous
   };
 }
 
@@ -3452,7 +3453,8 @@ const ADMIN_PHONE = '27677834591';
 function formatTelegramGroupMsg(tips) {
   var now = new Date();
   var dateStr = now.toLocaleDateString('en-ZA', { timeZone: 'Africa/Johannesburg', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-  var msg = '<b>MJK Betting Tips — ' + dateStr + '</b>\n\n';
+  var msg = '<b>MJK AI Ensemble Tips — ' + dateStr + '</b>\n';
+  msg += '<i>3 AI models unanimously agree</i>\n\n';
   var seen = {};
   var count = 0;
   for (var i = 0; i < tips.length; i++) {
@@ -3463,7 +3465,8 @@ function formatTelegramGroupMsg(tips) {
     var kickoff = t.kickoff ? new Date(t.kickoff).toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg', hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' }) : 'TBD';
     msg += t.icon + ' <b>' + t.match + '</b>\n';
     msg += '   ' + t.pick + ' @ <b>' + t.odds + '</b> (' + t.conf + '%)\n';
-    msg += '   ' + t.market + ' · ' + kickoff + (t.valueBet ? ' · VALUE' : '') + '\n\n';
+    msg += '   ' + t.market + ' · ' + kickoff + (t.valueBet ? ' · VALUE' : '') + '\n';
+    msg += '   <i>' + t.reason + '</i>\n\n';
   }
   var highConf = tips.filter(function(t) { return t.conf >= 80; });
   if (highConf.length > 0) {
@@ -3477,7 +3480,7 @@ function formatTelegramGroupMsg(tips) {
     }
     msg += '\n';
   }
-  msg += 'Free tips · AI-powered · 65%+ confidence\nUpgrade to Pro/Elite for full access — /tips for more';
+  msg += '<b>Triple AI Ensemble</b> · Our AI + BSD CatBoost + API-Football\nAll 3 models agree on these picks\nUpgrade to Pro/Elite for full access — /tips for more';
   return msg;
 }
 
@@ -3551,11 +3554,19 @@ async function sendDailyBroadcast() {
     }
   }
   if (TELEGRAM_GROUP_ID && TELEGRAM_BOT_TOKEN) {
-    var freeTips = upcoming.filter(function(t) { return t.type !== 'horse_racing'; }).slice(0, TIERS.free.tipLimit);
+    // Only send unanimous tips (all 3 AIs agreed) to the group
+    var unanimousTips = upcoming.filter(function(t) { return t.type !== 'horse_racing' && t.tripleAgree === true; });
+    // Fallback: if no unanimous tips, send top confidence tips
+    if (unanimousTips.length === 0) {
+      unanimousTips = upcoming.filter(function(t) { return t.type !== 'horse_racing' && t.conf >= 75; }).slice(0, TIERS.free.tipLimit);
+    }
+    var freeTips = unanimousTips.slice(0, TIERS.free.tipLimit);
     if (freeTips.length > 0) {
       var groupMsg = formatTelegramGroupMsg(freeTips);
       await sendTelegram(TELEGRAM_GROUP_ID, groupMsg);
-      console.log('[BROADCAST] Sent ' + freeTips.length + ' free tips to Telegram group ' + TELEGRAM_GROUP_ID);
+      console.log('[BROADCAST] Sent ' + freeTips.length + ' unanimous tips to Telegram group ' + TELEGRAM_GROUP_ID);
+    } else {
+      console.log('[BROADCAST] No unanimous tips found — skipping group broadcast');
     }
   }
   var waUrl = 'https://wa.me/' + ADMIN_PHONE + '?text=' + encodeURIComponent(plainMsg);
