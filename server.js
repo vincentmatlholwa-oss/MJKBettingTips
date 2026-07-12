@@ -2597,6 +2597,8 @@ function isGroupAdmin(msg) {
 }
 
 function isLink(text) {
+  // Allow MJK group link
+  if (/t\.me\/MJKBettingTips/i.test(text)) return false;
   return /https?:\/\/|www\.|t\.me|bit\.ly|tinyurl\.com|wa\.me|chat\.whatsapp\.com|discord\.gg|telegram\.me/i.test(text);
 }
 
@@ -2639,7 +2641,7 @@ async function handleTelegramUpdate(update) {
           '• /help — All commands\n\n' +
           '📊 We use AI-powered analysis across soccer, tennis, cricket, horse racing & more.\n\n' +
           '🔗 <b>Upgrade for full access:</b>\n' +
-          'Visit mjkbettingtips.com for Pro & Elite plans!'
+          't.me/MJKBettingTips for Pro & Elite plans!'
         );
       }
     }
@@ -2810,7 +2812,7 @@ async function handleTelegramUpdate(update) {
       bySport[sport].forEach(function(t, i) { reply += formatTip(t, i + 1) + '\n'; });
       reply += '\n';
     }
-    if (isGroup) reply += 'Upgrade for full access — mjkbettingtips.com';
+    if (isGroup) reply += 'Upgrade for full access — t.me/MJKBettingTips';
     await sendTelegram(chatId, reply);
     return;
   }
@@ -2895,66 +2897,10 @@ async function tgPollOnce() {
   tgPolling = false;
 }
 
-// === AUTO-PROMO: Send promotional message every 4 hours ===
+// === AUTO-PROMO: DISABLED ===
 function startPromoScheduler() {
-  var promoMessages = [
-    '🏆 <b>Why MJK Betting Tips?</b>\n\n' +
-    '✅ AI-powered predictions across 10+ sports\n' +
-    '✅ 70%+ win rate on tracked tips\n' +
-    '✅ Horse racing, soccer, tennis, cricket & more\n' +
-    '✅ Free daily tips in this group\n\n' +
-    '🔗 Upgrade to Pro for full access:\n' +
-    'Visit <b>mjkbettingtips.com</b>\n\n' +
-    '💰 Starter from R700/week | Pro from R2,500/week | Elite from R6,570/mo',
-
-    '📊 <b>Daily Tip Highlights</b>\n\n' +
-    'Get <b>AI-analyzed tips</b> with confidence ratings daily!\n\n' +
-    '🔥 Free tier: 3 tips/day (this group)\n' +
-    '⚡ Starter tier: 10 tips — R700/week\n' +
-    '⚡ Pro tier: 25 tips + horse racing — R2,500/week\n' +
-    '💎 Elite tier: 30 tips + early access — R6,570/month\n\n' +
-    'Join now 👉 mjkbettingtips.com',
-
-    '🏇 <b>Horse Racing Fans!</b>\n\n' +
-    'We cover horse racing with AI-powered predictions!\n' +
-    'Best odds from top South African bookmakers.\n\n' +
-    'Horse racing tips are available on <b>Pro & Elite</b> plans.\n\n' +
-    '👉 mjkbettingtips.com',
-
-    '⚽ <b>Weekend Ready?</b>\n\n' +
-    'MJK Betting Tips has you covered for:\n' +
-    '⚽ EPL & international soccer\n' +
-    '🏏 Cricket T20s\n' +
-    '🎾 Tennis Grand Slams\n' +
-    '🏇 Horse Racing\n\n' +
-    'Free tips posted daily — upgrade for full access!\n' +
-    'mjkbettingtips.com'
-  ];
-
-  async function sendPromo() {
-    var groupId = TELEGRAM_GROUP_ID;
-    if (!groupId || !TELEGRAM_BOT_TOKEN) return;
-    try {
-      var lastPromo = {};
-      try { lastPromo = JSON.parse(fs.readFileSync(TG_LAST_PROMO_FILE, 'utf8')); } catch (e) {}
-      var now = Date.now();
-      var lastTime = lastPromo.time || 0;
-      // Only send once per day (24 hours)
-      if (now - lastTime < 24 * 60 * 60 * 1000) return;
-
-      var idx = (lastPromo.index || 0) % promoMessages.length;
-      await sendTelegram(groupId, promoMessages[idx]);
-      saveJSON(TG_LAST_PROMO_FILE, { time: now, index: idx + 1 });
-      console.log('[TELEGRAM] Sent promo #' + (idx + 1) + ' to group');
-    } catch (e) {
-      console.log('[TELEGRAM] Promo error:', e.message || e);
-    }
-  }
-
-  // Check every hour
-  setInterval(sendPromo, 60 * 60 * 1000);
-  // Also send one 5 minutes after startup (for first deploy)
-  setTimeout(sendPromo, 5 * 60 * 1000);
+  console.log('[TELEGRAM] Promo scheduler disabled');
+  return;
 }
 
 function startTelegramBot() {
@@ -3520,7 +3466,7 @@ function formatTipsForWhatsApp(tips) {
     }
     msg += '\n';
   }
-  msg += 'AI-powered predictions | Confidence 65%+\nmjkbettingtips.com';
+  msg += 'AI-powered predictions | Confidence 65%+\nt.me/MJKBettingTips';
   return msg;
 }
 
