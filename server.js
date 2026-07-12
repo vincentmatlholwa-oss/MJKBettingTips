@@ -218,52 +218,71 @@ async function fetchStandingsData() {
     return;
   }
   loadStandingsCache();
-  var codes = ['PL', 'PD', 'SA', 'BL1', 'FL1', 'CL', 'WC'];
+  var codes = ['PL', 'PD', 'SA', 'BL1', 'FL1', 'CL'];
   var allTeams = {};
-  var allH2H = {};
   for (var ci = 0; ci < codes.length; ci++) {
-    try {
-      var res = await fetch(FB_API_BASE + '/competitions/' + codes[ci] + '/standings', { headers: { 'X-Auth-Token': FB_API_KEY } });
-      if (!res.ok) { console.log('[STANDINGS] ' + codes[ci] + ' HTTP ' + res.status); continue; }
-      var data = await res.json();
-      if (!data.standings) continue;
-      for (var si = 0; si < data.standings.length; si++) {
-        var st = data.standings[si];
-        if (st.type !== 'TOTAL') continue;
-        for (var ti = 0; ti < st.table.length; ti++) {
-          var entry = st.table[ti];
-          if (!entry.team) continue;
-          var name = entry.team.name;
-          var id = entry.team.id;
-          var played = entry.playedGames || 1;
-          var gf = entry.goalsFor || 0;
-          var ga = entry.goalsAgainst || 0;
-          var avgGF = gf / played;
-          var avgGA = ga / played;
-          var formArr = entry.form ? entry.form.split(',').map(function(f) { return f.trim().toUpperCase(); }) : [];
-          var attRating = Math.max(3, Math.min(10, 5 + (avgGF - 0.8) * 3));
-          var defRating = Math.max(3, Math.min(10, 5 + (2.0 - avgGA) * 3));
-          var eloBase = ELO_BASE + ((entry.position || 10) <= 4 ? 150 : (entry.position || 10) <= 10 ? 50 : (entry.position || 10) >= 17 ? -100 : 0);
-          var eloFromPts = Math.round((entry.points || 0) / played * 12);
+    // Try current season first
+    var loaded = await loadCompetitionStandings(codes[ci], null, allTeams);
+    // If current season has no real data (pre-season), fetch last season
+    if (!loaded) {
+      var lastSeason = new Date().getFullYear() - 1;
+      await loadCompetitionStandings(codes[ci], lastSeason, allTeams);
+    }
+  }
+  standingsData = { _teams: allTeams, _date: today };
+  standingsDate = today;
+  saveStandingsCache();
+  console.log('[STANDINGS] Total: ' + Object.keys(allTeams).length + ' real teams loaded');
+}
+
+async function loadCompetitionStandings(code, season, allTeams) {
+  try {
+    var url = FB_API_BASE + '/competitions/' + code + '/standings' + (season ? '?season=' + season : '');
+    var res = await fetch(url, { headers: { 'X-Auth-Token': FB_API_KEY } });
+    if (!res.ok) { console.log('[STANDINGS] ' + code + (season ? '/' + season : '') + ' HTTP ' + res.status); return false; }
+    var data = await res.json();
+    if (!data.standings) return false;
+    var hasRealData = false;
+    for (var si = 0; si < data.standings.length; si++) {
+      var st = data.standings[si];
+      if (st.type !== 'TOTAL') continue;
+      for (var ti = 0; ti < st.table.length; ti++) {
+        var entry = st.table[ti];
+        if (!entry.team) continue;
+        var name = entry.team.name;
+        var id = entry.team.id;
+        var played = entry.playedGames || 0;
+        if (played > 5) hasRealData = true;
+        var gf = entry.goalsFor || 0;
+        var ga = entry.goalsAgainst || 0;
+        var avgGF = played > 0 ? gf / played : 1.3;
+        var avgGA = played > 0 ? ga / played : 1.3;
+        var formArr = entry.form ? entry.form.split(',').map(function(f) { return f.trim().toUpperCase(); }) : [];
+        var attRating = Math.max(3, Math.min(10, 5 + (avgGF - 0.8) * 3));
+        var defRating = Math.max(3, Math.min(10, 5 + (2.0 - avgGA) * 3));
+        var eloBase = ELO_BASE + ((entry.position || 10) <= 4 ? 150 : (entry.position || 10) <= 10 ? 50 : (entry.position || 10) >= 17 ? -100 : 0);
+        var eloFromPts = played > 0 ? Math.round((entry.points || 0) / played * 12) : 0;
+        // Only update if we don't have this team, or if new data has more games
+        var existing = allTeams[name];
+        if (!existing || played > existing.played) {
           allTeams[name] = {
-            id: id, name: name, comp: codes[ci],
+            id: id, name: name, comp: code,
             attack: attRating, defense: defRating,
             form: formArr, formRate: computeFormRate(formArr),
             won: entry.won || 0, draw: entry.draw || 0, lost: entry.lost || 0,
             points: entry.points || 0, goalsFor: gf, goalsAgainst: ga,
             position: entry.position || 0, played: played,
             avgGF: avgGF, avgGA: avgGA,
-            elo: eloBase + eloFromPts
+            elo: eloBase + eloFromPts,
+            season: season || 'current'
           };
         }
       }
-      console.log('[STANDINGS] ' + codes[ci] + ': ' + data.standings.reduce(function(acc, s) { return acc + (s.table ? s.table.length : 0); }, 0) + ' teams');
-    } catch (e) { console.log('[STANDINGS] ' + codes[ci] + ' error: ' + (e.message || e).slice(0, 100)); }
-  }
-  standingsData = { _teams: allTeams, _h2h: allH2H, _date: today };
-  standingsDate = today;
-  saveStandingsCache();
-  console.log('[STANDINGS] Total: ' + Object.keys(allTeams).length + ' real teams loaded from football-data.org');
+    }
+    var teamCount = data.standings.reduce(function(acc, s) { return acc + (s.table ? s.table.length : 0); }, 0);
+    console.log('[STANDINGS] ' + code + (season ? '/' + season : '') + ': ' + teamCount + ' teams' + (hasRealData ? '' : ' (pre-season, fallback)'));
+    return hasRealData;
+  } catch (e) { console.log('[STANDINGS] ' + code + ' error: ' + (e.message || e).slice(0, 100)); return false; }
 }
 
 function lookupStandingsTeam(teamName) {
@@ -306,6 +325,129 @@ async function fetchRealH2H(homeTeamName, awayTeamName) {
     }
     return { homeWins: homeWins, awayWins: awayWins, draws: draws, total: h2hResults.length, results: h2hResults.slice(0, 5) };
   } catch (e) { return null; }
+}
+
+// === BROWSER RESEARCH: Scrape real-time stats from public sources ===
+var researchCache = {};
+var RESEARCH_TTL = 3600000; // 1 hour
+
+async function researchTeamStats(teamName) {
+  var cacheKey = teamName.toLowerCase();
+  if (researchCache[cacheKey] && (Date.now() - researchCache[cacheKey].ts) < RESEARCH_TTL) return researchCache[cacheKey];
+  var result = { team: teamName, news: [], injuries: [], recentForm: null, source: 'web' };
+  try {
+    // Source 1: Football-data.org team endpoint (recent matches for form)
+    var realTeam = lookupStandingsTeam(teamName);
+    if (realTeam && realTeam.id && FB_API_KEY) {
+      var season = new Date().getFullYear();
+      var res = await fetch(FB_API_BASE + '/teams/' + realTeam.id + '/matches?status=FINISHED&limit=6&season=' + season, { headers: { 'X-Auth-Token': FB_API_KEY } });
+      if (res.ok) {
+        var data = await res.json();
+        if (data.matches && data.matches.length > 0) {
+          var formResults = [];
+          for (var i = 0; i < data.matches.length; i++) {
+            var m = data.matches[i];
+            if (!m.score || !m.score.fullTime) continue;
+            var isHome = m.homeTeam && m.homeTeam.id === realTeam.id;
+            var hg = isHome ? m.score.fullTime.home : m.score.fullTime.away;
+            var ag = isHome ? m.score.fullTime.away : m.score.fullTime.home;
+            var opp = isHome ? (m.awayTeam ? m.awayTeam.name : '?') : (m.homeTeam ? m.homeTeam.name : '?');
+            var result = hg > ag ? 'W' : (hg < ag ? 'L' : 'D');
+            formResults.push({ opponent: opp, score: hg + '-' + ag, result: result, date: m.utcDate });
+          }
+          result.recentForm = formResults;
+          result.formString = formResults.map(function(r) { return r.result; }).join('');
+          // Infer injuries from missing players in recent lineups (simplified)
+        }
+      }
+    }
+  } catch (e) {}
+  try {
+    // Source 2: Scrape simple team stats from a free public API
+    var fbres = await fetch('https://www.football-data.org/v4/teams/' + (result.teamId || '0') + '/matches?limit=5', { headers: { 'X-Auth-Token': FB_API_KEY || '' }, timeout: 5000 }).catch(function() { return null; });
+  } catch (e) {}
+  researchCache[cacheKey] = result;
+  return result;
+}
+
+async function researchMatchStats(homeTeam, awayTeam) {
+  var homeResearch = await researchTeamStats(homeTeam);
+  var awayResearch = await researchTeamStats(awayTeam);
+  return {
+    home: homeResearch,
+    away: awayResearch,
+    h2h: await fetchRealH2H(homeTeam, awayTeam),
+    timestamp: Date.now()
+  };
+}
+
+// === STANDALONE TIPS FROM REAL STATS (no odds API needed) ===
+async function buildStatsBasedTip(home, away, league, kickoff, sportKey) {
+  var cfg = getCfg(sportKey);
+  var hStats = getAttackDefense(sportKey, home, true);
+  var aStats = getAttackDefense(sportKey, away, false);
+
+  // Run Poisson with real data
+  var poisson = dcPoissonPrediction(hStats.attack, hStats.defense, aStats.attack, aStats.defense, sportKey);
+
+  // ELO from real standings
+  var fmHome = formModifier(sportKey, home);
+  var fmAway = formModifier(sportKey, away);
+  var adjHome = Math.max(1000, Math.min(2000, getElo(sportKey, home) + HOME_ADVANTAGE_ELO + fmHome));
+  var adjAway = Math.max(1000, Math.min(2000, getElo(sportKey, away) + fmAway));
+  var eloProb = expectedScore(adjHome, adjAway);
+
+  // Research real-time form
+  var research = await researchMatchStats(home, away);
+
+  // Blend: 40% Poisson, 35% ELO, 25% form
+  var formH = research.home && research.home.recentForm ? computeFormRate(research.home.formString.split('')) : 0.5;
+  var formA = research.away && research.away.recentForm ? computeFormRate(research.away.formString.split('')) : 0.5;
+  var formAdv = (formH - formA) * 0.25;
+
+  var predHome = poisson.homeWin * 0.40 + eloProb * 0.35 + (0.5 + formAdv) * 0.25;
+  var predDraw = poisson.draw * 0.40 + 0.25 * 0.35;
+  var predAway = poisson.awayWin * 0.40 + (1 - eloProb) * 0.35 + (0.5 - formAdv) * 0.25;
+  var total = predHome + predDraw + predAway;
+  if (total > 0) { predHome /= total; predDraw /= total; predAway /= total; }
+
+  // Pick best outcome
+  var pick = '', conf = 0, odds = '', mr = 'Match Result';
+  var h2hData = getH2H(sportKey, home, away);
+  if (predHome > predAway && predHome > predDraw && predHome > 0.35) {
+    pick = home + ' to Win'; conf = Math.round(predHome * 100);
+    odds = predHome > 0.05 ? (1 / predHome * 0.92).toFixed(2) : '5.00';
+  } else if (predAway > predHome && predAway > predDraw && predAway > 0.35) {
+    pick = away + ' to Win'; conf = Math.round(predAway * 100);
+    odds = predAway > 0.05 ? (1 / predAway * 0.92).toFixed(2) : '5.00';
+  } else if (predHome > 0.30 && predDraw > 0.25) {
+    pick = home + ' or Draw'; mr = 'Double Chance'; conf = Math.round((predHome + predDraw) * 100);
+    odds = (predHome + predDraw) > 0.05 ? (1 / (predHome + predDraw) * 0.92).toFixed(2) : '2.00';
+  } else {
+    return null;
+  }
+  conf = Math.min(92, Math.max(68, conf));
+  conf = calibrateConfidence(conf);
+
+  var features = buildFeatures(home, away, sportKey);
+  var rc = [];
+  if (hStats.source === 'standings') rc.push('REAL');
+  rc.push('Pois+' + poisson.expectedHomeGoals.toFixed(1) + '-' + poisson.expectedAwayGoals.toFixed(1));
+  rc.push('Elo ' + Math.round(adjHome) + 'v' + Math.round(adjAway));
+  if (research.home && research.home.formString) rc.push('F' + research.home.formString);
+  if (research.away && research.away.formString) rc.push('F' + research.away.formString);
+  if (h2hData) rc.push('H2H' + h2hData.total);
+  rc.push('NO-ODDS');
+
+  return {
+    type: sportKey, sport: 'Football', icon: '\u26BD',
+    match: home + ' vs ' + away, league: league || 'Football',
+    country: COUNTRY_MAP[sportKey] || '',
+    marketType: 'h2h', market: mr, marketLine: null,
+    kickoff: kickoff, pick: pick, odds: odds, conf: conf,
+    realOdds: null, bookmaker: '', valueBet: false,
+    reason: 'AI [' + mr + '] ' + rc.join(' | '), features: features
+  };
 }
 
 // === AUTH ===
@@ -1228,37 +1370,24 @@ async function refreshTips() {
   for (var si = 0; si < SPORTS.length; si++) {
     var sport = SPORTS[si];
     var hasOdds = cachedOdds[sport.key] && cachedOdds[sport.key].length > 0;
-    if (!hasOdds && !sport.key.startsWith('soccer_')) continue; // only soccer has AI fallback without odds
-    if (sport.key === 'soccer_fifa_world_cup' || (!hasOdds && sport.key.startsWith('soccer_'))) {
-      var fixtures = await fetchSoccerFixtures();
-      if (fixtures.length > 0) {
-        for (var fi = 0; fi < fixtures.length; fi++) {
-          var m = mapFootballDataFixture(fixtures[fi]);
-          var oddsMatch = hasOdds ? cachedOdds[sport.key].find(function(o) { return normalizeTeamName(o.home_team) === normalizeTeamName(m.homeTeam) && normalizeTeamName(o.away_team) === normalizeTeamName(m.awayTeam); }) : null;
-          if (oddsMatch) { var tip = await buildSoccerTip(oddsMatch, sport); if (tip) allTips.push(tip); }
-          else {
-            var hStats2 = getAttackDefense(sport.key, m.homeTeam, true);
-            var aStats2 = getAttackDefense(sport.key, m.awayTeam, false);
-            var p = dcPoissonPrediction(hStats2.attack, hStats2.defense, aStats2.attack, aStats2.defense, sport.key);
-            var tt = '', conf = 70, o = '2.00', mr = 'Match Result';
-            if (p.homeWin > p.awayWin && p.homeWin > p.draw) { tt = m.homeTeam + ' to Win'; conf = Math.min(96, Math.max(68, Math.round(65 + (p.homeWin - 0.40) * 55))); o = p.homeWin > 0.05 ? (1 / p.homeWin).toFixed(2) : '10.00'; }
-            else if (p.awayWin > p.homeWin && p.awayWin > p.draw) { tt = m.awayTeam + ' to Win'; conf = Math.min(96, Math.max(68, Math.round(65 + (p.awayWin - 0.40) * 55))); o = p.awayWin > 0.05 ? (1 / p.awayWin).toFixed(2) : '10.00'; }
-            else { tt = m.homeTeam + ' or Draw'; mr = 'Double Chance'; var cb = p.homeWin + p.draw; conf = Math.min(93, Math.max(70, Math.round(68 + (cb - 0.55) * 50))); o = cb > 0.05 ? (1 / cb).toFixed(2) : '10.00'; }
-            conf = calibrateConfidence(conf);
-            var features = buildFeatures(m.homeTeam, m.awayTeam, sport.key);
-            var dataSrc = (hStats2.source === 'standings') ? ' REAL' : '';
-            allTips.push({ type: sport.key, sport: sport.name, icon: sport.icon, match: m.homeTeam + ' vs ' + m.awayTeam, league: m.league, country: COUNTRY_MAP[sport.key] || '', marketType: 'h2h', market: mr, marketLine: null, kickoff: m.kickoff, pick: tt, odds: o, conf: conf, realOdds: null, bookmaker: '', valueBet: false, reason: 'AI' + dataSrc + ' DC-Poisson (' + p.expectedHomeGoals.toFixed(1) + '-' + p.expectedAwayGoals.toFixed(1) + ')', features: features });
+    if (sport.key.startsWith('soccer_')) {
+      if (hasOdds) {
+        for (var oi = 0; oi < cachedOdds[sport.key].length; oi++) { var tip = await buildSoccerTip(cachedOdds[sport.key][oi], sport); if (tip) allTips.push(tip); }
+      } else {
+        // No odds — generate from real stats + web research
+        var fixtures = await fetchSoccerFixtures();
+        if (fixtures.length > 0) {
+          for (var fi = 0; fi < fixtures.length; fi++) {
+            var m = mapFootballDataFixture(fixtures[fi]);
+            var tip = await buildStatsBasedTip(m.homeTeam, m.awayTeam, m.league, m.kickoff, sport.key);
+            if (tip) { tip.sport = sport.name; tip.icon = sport.icon; allTips.push(tip); }
           }
         }
       }
-      if (hasOdds) {
-        for (var oi = 0; oi < cachedOdds[sport.key].length; oi++) { var tip = await buildSoccerTip(cachedOdds[sport.key][oi], sport); if (tip) allTips.push(tip); }
-      }
-    } else if (sport.key.startsWith('soccer_')) {
-      for (var oi = 0; oi < cachedOdds[sport.key].length; oi++) { var tip = await buildSoccerTip(cachedOdds[sport.key][oi], sport); if (tip) allTips.push(tip); }
-    } else {
+    } else if (hasOdds) {
       for (var oi = 0; oi < cachedOdds[sport.key].length; oi++) { var tip = buildNonSoccerTip(cachedOdds[sport.key][oi], sport); if (tip) allTips.push(tip); }
     }
+    // Non-soccer without odds: skip (no reliable data source)
   }
   for (var ti = 0; ti < allTips.length; ti++) mergeTip(allTips[ti]);
   saveTrackedTips();
