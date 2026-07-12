@@ -131,8 +131,23 @@ let headToHead = {};
 let matchDates = {};
 let modelCoeffs = {};
 let featureLogs = [];
-let sportHealth = {};  // { sportKey: { recentWins, recentTotal, lastChecked } }
-let disabledSports = {}; // { sportKey: true } — auto-disabled if win rate < 40%
+let sportHealth = {};
+let disabledSports = {};
+
+// === Real standings data from football-data.org ===
+const COMPETITION_MAP = {
+  'PL': 'soccer_epl',
+  'PD': 'soccer_epl',
+  'SA': 'soccer_epl',
+  'BL1': 'soccer_epl',
+  'FL1': 'soccer_epl',
+  'CL': 'soccer_epl',
+  'WC': 'soccer_fifa_world_cup',
+  'BSA': 'soccer_epl'
+};
+var standingsData = {};
+var standingsDate = '';
+const STANDINGS_FILE = path.join(__dirname, 'data', 'standings_cache.json');
 
 const K_FACTOR = 32;
 const ELO_BASE = 1500;
@@ -156,6 +171,142 @@ function loadSportHealth() { var h = loadJSON(SPORT_HEALTH_FILE, {}); sportHealt
 function saveSportHealth() { saveJSON(SPORT_HEALTH_FILE, { sportHealth: sportHealth, disabledSports: disabledSports }); }
 function loadCachedOdds() { cachedOdds = loadJSON(CACHED_ODDS_FILE, {}); }
 function saveCachedOdds() { saveJSON(CACHED_ODDS_FILE, cachedOdds); }
+
+// === REAL STANDINGS DATA FROM FOOTBALL-DATA.ORG ===
+function loadStandingsCache() { standingsData = loadJSON(STANDINGS_FILE, {}); if (standingsData._date) standingsDate = standingsData._date; }
+function saveStandingsCache() { saveJSON(STANDINGS_FILE, standingsData); }
+
+function stripClubSuffix(name) {
+  return name.replace(/\s+(FC|CF|SC|AC|AS|SS|RC|CD|UD|SD|BK|IF|FF|SK|FK|TK|AK|IK|OK|HK|VK|KRC|KAA|RSC|OSC|VfB|VfL|TSG|SC\sFreiburg|SC\sPaderborn)$/gi, '').trim();
+}
+
+function fuzzyMatchTeam(query, teamNames) {
+  var q = normalizeTeamName(query).toLowerCase().trim();
+  var qs = stripClubSuffix(q);
+  for (var i = 0; i < teamNames.length; i++) {
+    var tn = teamNames[i].toLowerCase().trim();
+    var tns = stripClubSuffix(tn);
+    if (q === tn || qs === tns) return teamNames[i];
+    if (tn.indexOf(qs) >= 0 || qs.indexOf(tns) >= 0) return teamNames[i];
+  }
+  var qw = q.split(/\s+/);
+  for (var i = 0; i < teamNames.length; i++) {
+    var tn = teamNames[i].toLowerCase();
+    var matches = 0;
+    for (var wi = 0; wi < qw.length; wi++) { if (tn.indexOf(qw[wi]) >= 0) matches++; }
+    if (matches >= Math.ceil(qw.length * 0.7)) return teamNames[i];
+  }
+  return null;
+}
+
+function computeFormRate(formArray) {
+  if (!formArray || formArray.length === 0) return 0.5;
+  var pts = 0;
+  for (var i = 0; i < formArray.length; i++) {
+    var f = formArray[i].trim().toUpperCase();
+    if (f === 'W') pts += 3;
+    else if (f === 'D') pts += 1;
+  }
+  return pts / (formArray.length * 3);
+}
+
+async function fetchStandingsData() {
+  if (!FB_API_KEY) { console.log('[STANDINGS] No API key, skipping'); return; }
+  var today = new Date().toISOString().split('T')[0];
+  if (standingsDate === today && standingsData._teams && Object.keys(standingsData._teams).length > 10) {
+    console.log('[STANDINGS] Using cached data (' + Object.keys(standingsData._teams).length + ' teams)');
+    return;
+  }
+  loadStandingsCache();
+  var codes = ['PL', 'PD', 'SA', 'BL1', 'FL1', 'CL', 'WC'];
+  var allTeams = {};
+  var allH2H = {};
+  for (var ci = 0; ci < codes.length; ci++) {
+    try {
+      var res = await fetch(FB_API_BASE + '/competitions/' + codes[ci] + '/standings', { headers: { 'X-Auth-Token': FB_API_KEY } });
+      if (!res.ok) { console.log('[STANDINGS] ' + codes[ci] + ' HTTP ' + res.status); continue; }
+      var data = await res.json();
+      if (!data.standings) continue;
+      for (var si = 0; si < data.standings.length; si++) {
+        var st = data.standings[si];
+        if (st.type !== 'TOTAL') continue;
+        for (var ti = 0; ti < st.table.length; ti++) {
+          var entry = st.table[ti];
+          if (!entry.team) continue;
+          var name = entry.team.name;
+          var id = entry.team.id;
+          var played = entry.playedGames || 1;
+          var gf = entry.goalsFor || 0;
+          var ga = entry.goalsAgainst || 0;
+          var avgGF = gf / played;
+          var avgGA = ga / played;
+          var formArr = entry.form ? entry.form.split(',').map(function(f) { return f.trim().toUpperCase(); }) : [];
+          var attRating = Math.max(3, Math.min(10, 5 + (avgGF - 0.8) * 3));
+          var defRating = Math.max(3, Math.min(10, 5 + (2.0 - avgGA) * 3));
+          var eloBase = ELO_BASE + ((entry.position || 10) <= 4 ? 150 : (entry.position || 10) <= 10 ? 50 : (entry.position || 10) >= 17 ? -100 : 0);
+          var eloFromPts = Math.round((entry.points || 0) / played * 12);
+          allTeams[name] = {
+            id: id, name: name, comp: codes[ci],
+            attack: attRating, defense: defRating,
+            form: formArr, formRate: computeFormRate(formArr),
+            won: entry.won || 0, draw: entry.draw || 0, lost: entry.lost || 0,
+            points: entry.points || 0, goalsFor: gf, goalsAgainst: ga,
+            position: entry.position || 0, played: played,
+            avgGF: avgGF, avgGA: avgGA,
+            elo: eloBase + eloFromPts
+          };
+        }
+      }
+      console.log('[STANDINGS] ' + codes[ci] + ': ' + data.standings.reduce(function(acc, s) { return acc + (s.table ? s.table.length : 0); }, 0) + ' teams');
+    } catch (e) { console.log('[STANDINGS] ' + codes[ci] + ' error: ' + (e.message || e).slice(0, 100)); }
+  }
+  standingsData = { _teams: allTeams, _h2h: allH2H, _date: today };
+  standingsDate = today;
+  saveStandingsCache();
+  console.log('[STANDINGS] Total: ' + Object.keys(allTeams).length + ' real teams loaded from football-data.org');
+}
+
+function lookupStandingsTeam(teamName) {
+  if (!standingsData._teams) return null;
+  var keys = Object.keys(standingsData._teams);
+  if (keys.length === 0) return null;
+  var match = fuzzyMatchTeam(teamName, keys);
+  return match ? standingsData._teams[match] : null;
+}
+
+// Fetch recent matches for real H2H data
+async function fetchRealH2H(homeTeamName, awayTeamName) {
+  if (!FB_API_KEY) return null;
+  var homeS = lookupStandingsTeam(homeTeamName);
+  var awayS = lookupStandingsTeam(awayTeamName);
+  if (!homeS || !awayS || !homeS.id || !awayS.id) return null;
+  try {
+    var res = await fetch(FB_API_BASE + '/teams/' + homeS.id + '/matches?status=FINISHED&limit=20', { headers: { 'X-Auth-Token': FB_API_KEY } });
+    if (!res.ok) return null;
+    var data = await res.json();
+    if (!data.matches) return null;
+    var h2hResults = [];
+    var awayName = stripClubSuffix(awayTeamName.toLowerCase());
+    for (var i = 0; i < data.matches.length; i++) {
+      var m = data.matches[i];
+      var homeName = m.homeTeam ? stripClubSuffix(m.homeTeam.name.toLowerCase()) : '';
+      var awName = m.awayTeam ? stripClubSuffix(m.awayTeam.name.toLowerCase()) : '';
+      if (homeName.indexOf(awayName) >= 0 || awName.indexOf(awayName) >= 0) {
+        if (m.score && m.score.fullTime) {
+          h2hResults.push({ home: m.homeTeam.name, away: m.awayTeam.name, hg: m.score.fullTime.home, ag: m.score.fullTime.away, date: m.utcDate });
+        }
+      }
+    }
+    if (h2hResults.length === 0) return null;
+    var homeWins = 0, awayWins = 0, draws = 0;
+    for (var i = 0; i < h2hResults.length; i++) {
+      if (h2hResults[i].hg > h2hResults[i].ag) homeWins++;
+      else if (h2hResults[i].ag > h2hResults[i].hg) awayWins++;
+      else draws++;
+    }
+    return { homeWins: homeWins, awayWins: awayWins, draws: draws, total: h2hResults.length, results: h2hResults.slice(0, 5) };
+  } catch (e) { return null; }
+}
 
 // === AUTH ===
 function hashPassword(pw) {
@@ -273,9 +424,15 @@ function saveElo() { saveJSON(ELO_FILE, eloRatings); }
 function getElo(sportKey, teamName) {
   if (!eloRatings[sportKey]) eloRatings[sportKey] = {};
   if (eloRatings[sportKey][teamName] === undefined) {
-    const rating = teamRatings[teamName];
-    if (rating) { const avg = (rating.attack + rating.defense + rating.form) / 3; eloRatings[sportKey][teamName] = { elo: Math.round(ELO_BASE + (avg - 7) * 100), games: 0 }; }
-    else { eloRatings[sportKey][teamName] = { elo: ELO_BASE, games: 0 }; }
+    // PRIORITY 1: Initialize from real standings data
+    var realTeam = lookupStandingsTeam(teamName);
+    if (realTeam && realTeam.elo) {
+      eloRatings[sportKey][teamName] = { elo: realTeam.elo, games: realTeam.played || 0 };
+    } else {
+      const rating = teamRatings[teamName];
+      if (rating) { const avg = (rating.attack + rating.defense + rating.form) / 3; eloRatings[sportKey][teamName] = { elo: Math.round(ELO_BASE + (avg - 7) * 100), games: 0 }; }
+      else { eloRatings[sportKey][teamName] = { elo: ELO_BASE, games: 0 }; }
+    }
     saveElo();
   }
   return eloRatings[sportKey][teamName].elo;
@@ -307,20 +464,44 @@ function updateForm(sportKey, teamA, teamB, scoreA) {
   saveForm();
 }
 function formModifier(sportKey, teamName) {
+  // PRIORITY 1: Real form from football-data.org standings
+  var realTeam = lookupStandingsTeam(teamName);
+  if (realTeam && realTeam.form && realTeam.form.length >= 3) {
+    var w = 0, l = 0;
+    for (var i = 0; i < realTeam.form.length; i++) {
+      if (realTeam.form[i] === 'W') w++;
+      else if (realTeam.form[i] === 'L') l++;
+    }
+    return (w - l) * 12;
+  }
+  // PRIORITY 2: Learned form from resolved tips
   if (!formTracker[sportKey] || !formTracker[sportKey][teamName]) return 0;
   const f = formTracker[sportKey][teamName].form;
   if (f.length < 3) return 0;
-  const w = f.filter(x => x === 'W').length, l = f.filter(x => x === 'L').length;
-  return (w - l) * 8;
+  const fw = f.filter(x => x === 'W').length, fl = f.filter(x => x === 'L').length;
+  return (fw - fl) * 8;
 }
 function getFormWindow(sportKey, team, windowSize) {
+  // PRIORITY 1: Real form from football-data.org standings
+  var realTeam = lookupStandingsTeam(team);
+  if (realTeam && realTeam.form && realTeam.form.length >= 2) {
+    var recentForm = realTeam.form.slice(-windowSize);
+    var w = 0, d = 0, l = 0;
+    for (var i = 0; i < recentForm.length; i++) {
+      if (recentForm[i] === 'W') w++;
+      else if (recentForm[i] === 'D') d++;
+      else if (recentForm[i] === 'L') l++;
+    }
+    return { wins: w, draws: d, losses: l, total: recentForm.length, rate: recentForm.length > 0 ? (w * 3 + d) / (recentForm.length * 3) : 0.5, source: 'standings' };
+  }
+  // PRIORITY 2: Learned form
   if (!formTracker[sportKey] || !formTracker[sportKey][team]) return null;
   const f = formTracker[sportKey][team].form;
-  const recent = f.slice(-windowSize);
-  const w = recent.filter(x => x === 'W').length;
-  const d = recent.filter(x => x === 'D').length;
-  const l = recent.filter(x => x === 'L').length;
-  return { wins: w, draws: d, losses: l, total: recent.length, rate: recent.length > 0 ? (w * 3 + d) / (recent.length * 3) : 0.5 };
+  const learnedRecent = f.slice(-windowSize);
+  const lw = learnedRecent.filter(x => x === 'W').length;
+  const ld = learnedRecent.filter(x => x === 'D').length;
+  const ll = learnedRecent.filter(x => x === 'L').length;
+  return { wins: lw, draws: ld, losses: ll, total: learnedRecent.length, rate: learnedRecent.length > 0 ? (lw * 3 + ld) / (learnedRecent.length * 3) : 0.5, source: 'learned' };
 }
 
 // === ADAPTIVE WEIGHTS (unchanged) ===
@@ -329,7 +510,7 @@ function saveWeights() { saveJSON(WEIGHTS_FILE, adaptiveWeights); }
 function getWeights(sportKey) {
   if (!adaptiveWeights[sportKey]) {
     const isSoccer = sportKey.startsWith('soccer_');
-    adaptiveWeights[sportKey] = isSoccer ? { eloWeight: 0.25, poissonWeight: 0.40, marketWeight: 0.35, samples: 0 } : { eloWeight: 0.40, poissonWeight: 0, marketWeight: 0.60, samples: 0 };
+    adaptiveWeights[sportKey] = isSoccer ? { eloWeight: 0.30, poissonWeight: 0.35, marketWeight: 0.35, samples: 0 } : { eloWeight: 0.50, poissonWeight: 0, marketWeight: 0.50, samples: 0 };
     saveWeights();
   }
   return adaptiveWeights[sportKey];
@@ -389,17 +570,25 @@ function updateTeamStats(sportKey, home, away, hg, ag) {
 }
 function getAttackDefense(sportKey, team, isHome) {
   const cfg = getCfg(sportKey);
-  if (!teamStats[sportKey] || !teamStats[sportKey][team] || teamStats[sportKey][team].matches < 2) {
-    const r = getDefaultRating(team);
-    return { attack: r.attack, defense: r.defense, form: r.form };
+  // PRIORITY 1: Real standings data from football-data.org
+  var realTeam = lookupStandingsTeam(team);
+  if (realTeam) {
+    var att = isHome ? realTeam.attack + 0.3 : realTeam.attack;
+    var def = isHome ? realTeam.defense - 0.2 : realTeam.defense;
+    return { attack: Math.max(3, Math.min(10, att)), defense: Math.max(3, Math.min(10, def)), form: 5 + realTeam.formRate * 5, source: 'standings' };
   }
-  const s = teamStats[sportKey][team];
-  const useHome = isHome && s.homeMatches > 0;
-  const relevantMatches = useHome ? s.homeMatches : s.matches;
-  const avgGF = useHome ? s.homeGf / s.homeMatches : (s.gf - s.homeGf) / Math.max(1, s.matches - s.homeMatches);
-  const avgGA = useHome ? s.homeGa / s.homeMatches : (s.ga - s.homeGa) / Math.max(1, s.matches - s.homeMatches);
-  const fMod = formModifier(sportKey, team);
-  return { attack: Math.max(3, Math.min(10, 7 + (avgGF - 1.3) * 1.5)), defense: Math.max(3, Math.min(10, 7 + (1.3 - avgGA) * 1.5)), form: 7 + fMod / 8 };
+  // PRIORITY 2: Learned stats from resolved tips
+  if (teamStats[sportKey] && teamStats[sportKey][team] && teamStats[sportKey][team].matches >= 5) {
+    const s = teamStats[sportKey][team];
+    const useHome = isHome && s.homeMatches > 0;
+    const avgGF = useHome ? s.homeGf / s.homeMatches : (s.gf - s.homeGf) / Math.max(1, s.matches - s.homeMatches);
+    const avgGA = useHome ? s.homeGa / s.homeMatches : (s.ga - s.homeGa) / Math.max(1, s.matches - s.homeMatches);
+    const fMod = formModifier(sportKey, team);
+    return { attack: Math.max(3, Math.min(10, 7 + (avgGF - 1.3) * 1.5)), defense: Math.max(3, Math.min(10, 7 + (1.3 - avgGA) * 1.5)), form: 7 + fMod / 8, source: 'learned' };
+  }
+  // PRIORITY 3: Fallback defaults (minimal weight)
+  const r = getDefaultRating(team);
+  return { attack: r.attack, defense: r.defense, form: r.form, source: 'default' };
 }
 
 // --- Head-to-Head ---
@@ -417,6 +606,10 @@ function updateH2H(sportKey, home, away, hg, ag) {
   saveH2H();
 }
 function getH2H(sportKey, home, away) {
+  // PRIORITY 1: Real H2H from football-data.org (fetched on-demand in buildSoccerTip)
+  var realKey = '_realH2H_' + home + '|' + away;
+  if (standingsData[realKey]) return standingsData[realKey];
+  // PRIORITY 2: Learned H2H from resolved tips
   if (!headToHead[sportKey]) return null;
   const pairKey = [home, away].sort().join('|');
   const h2h = headToHead[sportKey][pairKey];
@@ -724,7 +917,7 @@ function scoreMarket(aiProb, bestOdds, agreement) {
 }
 
 // === ADVANCED PREDICTORS ===
-function buildSoccerTip(oddsMatch, sport) {
+async function buildSoccerTip(oddsMatch, sport) {
   if (disabledSports[sport.key]) return null;
   const home = oddsMatch.home_team, away = oddsMatch.away_team;
   const cfg = getCfg(sport.key);
@@ -743,6 +936,13 @@ function buildSoccerTip(oddsMatch, sport) {
   const w = getWeights(sport.key);
   const effectiveMarket = consensus || { homeWin: 0.34, awayWin: 0.33, draw: 0.33, agreement: 0.5, bestHomePrice: 0, bestAwayPrice: 0, bestDrawPrice: 0, bestHomeBook: '', bestAwayBook: '', totalBooks: 0 };
 
+  // Fetch real H2H from football-data.org
+  var realH2H = await fetchRealH2H(home, away);
+  if (realH2H && realH2H.total >= 1) {
+    var h2hKey = '_realH2H_' + home + '|' + away;
+    standingsData[h2hKey] = { homeWinRate: realH2H.homeWins / realH2H.total, total: realH2H.total };
+  }
+
   // ML model override if trained
   let mlHomeProb = null;
   if (cfg.usePoisson) {
@@ -751,7 +951,8 @@ function buildSoccerTip(oddsMatch, sport) {
     if (rawLR !== null) mlHomeProb = rawLR;
   }
 
-  // H2H prediction blend
+  // Enhanced blending with real data
+  const h2hData = getH2H(sport.key, home, away);
   let pred;
   if (mlHomeProb !== null) {
     const mlAwayProb = 1 - mlHomeProb;
@@ -760,22 +961,30 @@ function buildSoccerTip(oddsMatch, sport) {
   } else {
     pred = { homeWin: poisson.homeWin * w.poissonWeight + eloHome * w.eloWeight + effectiveMarket.homeWin * w.marketWeight, awayWin: poisson.awayWin * w.poissonWeight + eloAway * w.eloWeight + effectiveMarket.awayWin * w.marketWeight, draw: cfg.hasDraw ? (poisson.draw * w.poissonWeight + eloDrawVal * w.eloWeight + effectiveMarket.draw * w.marketWeight) : 0, mlUsed: false };
   }
+
+  // Apply real H2H adjustment (15% weight on real H2H if available)
+  if (h2hData && h2hData.total >= 3) {
+    var h2hHomeBonus = (h2hData.homeWinRate - 0.45) * 0.15;
+    pred.homeWin += h2hHomeBonus;
+    pred.awayWin -= h2hHomeBonus;
+  }
+
   const totalP = pred.homeWin + pred.awayWin + pred.draw;
   if (totalP > 0) { pred.homeWin /= totalP; pred.awayWin /= totalP; pred.draw /= totalP; }
 
   const features = buildFeatures(home, away, sport.key);
   const agreement = consensus ? consensus.agreement : 0.5;
-  const h2h = getH2H(sport.key, home, away);
   const hForm = getFormWindow(sport.key, home, cfg.formWindow);
   const aForm = getFormWindow(sport.key, away, cfg.formWindow);
 
   // Reason components
   let rc = [];
+  if (hStats.source === 'standings') rc.push('REAL');
   if (pred.mlUsed) rc.push('ML');
   if (cfg.usePoisson) rc.push('Pois+' + poisson.expectedHomeGoals.toFixed(1) + '-' + poisson.expectedAwayGoals.toFixed(1));
   rc.push('Elo ' + Math.round(adjustedElo) + 'v' + Math.round(adjustedEloA));
   if (consensus) rc.push(consensus.totalBooks + 'bk');
-  if (h2h) rc.push('H2H' + h2h.total);
+  if (h2hData && h2hData.total >= 1) rc.push('H2H' + h2hData.total);
   if (hForm && aForm) rc.push('F' + hForm.wins + 'W-' + hForm.losses + 'L/' + aForm.wins + 'W-' + aForm.losses + 'L');
 
   // === Evaluate all markets ===
@@ -814,7 +1023,7 @@ function buildSoccerTip(oddsMatch, sport) {
 
   // 3. BTTS market
   var btts = predictBTTS(hStats.attack, hStats.defense, aStats.attack, aStats.defense, sport.key);
-  var bttsOutcomes = extractMarket(oddsMatch, 'totals'); // reuse totals for BTTS price approximation
+  var bttsOutcomes = extractMarket(oddsMatch, 'totals');
   var yesPrice = bestPriceForOutcome(bttsOutcomes, 'Yes', null);
   if (yesPrice.price <= 0) yesPrice = bestPriceForOutcome(bttsOutcomes, 'Over', 0.5);
   if (yesPrice.price <= 0) { yesPrice.price = 0; yesPrice.book = ''; }
@@ -838,6 +1047,8 @@ function buildNonSoccerTip(oddsMatch, sport) {
   const cfg = getCfg(sport.key);
   const consensus = marketConsensus(home, away, oddsMatch, sport);
   if (!consensus) return null;
+  const hStats = getAttackDefense(sport.key, home, true);
+  const aStats = getAttackDefense(sport.key, away, false);
   const fmHome = formModifier(sport.key, home);
   const adjustedElo = Math.max(1000, Math.min(2000, getElo(sport.key, home) + HOME_ADVANTAGE_ELO + fmHome));
   const fmAway = formModifier(sport.key, away);
@@ -846,8 +1057,7 @@ function buildNonSoccerTip(oddsMatch, sport) {
   const eloDrawVal = cfg.hasDraw ? 0.25 : 0;
   const eloHome = rawElo * (1 - eloDrawVal);
   const eloAway = (1 - rawElo) * (1 - eloDrawVal);
-  const hR = getDefaultRating(home), aR = getDefaultRating(away);
-  const ratingDiff = ((hR.attack + hR.defense + hR.form) - (aR.attack + aR.defense + aR.form)) / 30;
+  const ratingDiff = ((hStats.attack + hStats.defense) - (aStats.attack + aStats.defense)) / 20;
   const w = getWeights(sport.key);
   const totalW = w.eloWeight + w.marketWeight;
   const eW = w.eloWeight / totalW, mW = w.marketWeight / totalW;
@@ -877,7 +1087,8 @@ function buildNonSoccerTip(oddsMatch, sport) {
   const formNote = (Math.abs(fmHome) > 5 || Math.abs(fmAway) > 5) ? ' Form ' + (fmHome > 0 ? '+' : '') + fmHome + 'v' + (fmAway > 0 ? '+' : '') + fmAway : '';
   const h2h = getH2H(sport.key, home, away);
   const h2hNote = h2h ? ' H2H ' + h2h.total : '';
-  reason = 'AI' + (rawLR !== null ? ' ML' : '') + ' Elo ' + Math.round(adjustedElo) + 'v' + Math.round(adjustedEloA) + formNote + h2hNote + ' ' + consensus.totalBooks + 'books';
+  var dataSrc = (hStats.source === 'standings') ? ' REAL' : '';
+  reason = 'AI' + dataSrc + (rawLR !== null ? ' ML' : '') + ' Elo ' + Math.round(adjustedElo) + 'v' + Math.round(adjustedEloA) + formNote + h2hNote + ' ' + consensus.totalBooks + 'books';
   return { type: sport.key, sport: sport.name, icon: sport.icon, match: home + ' vs ' + away, league: sport.name, country: COUNTRY_MAP[sport.key] || '', marketType: 'h2h', market: cfg.hasDraw ? 'Match Result' : 'Match Winner', marketLine: null, kickoff: oddsMatch.commence_time, pick: tipText, odds: odds, conf: Math.min(cfg.maxConf, Math.max(cfg.minConf, confidence)), realOdds: { home: consensus.bestHomePrice || null, away: consensus.bestAwayPrice || null, draw: cfg.hasDraw ? (consensus.bestDrawPrice || null) : null }, bookmaker: bookmaker, valueBet: valueBet, reason: reason, features: features };
 }
 
@@ -967,6 +1178,8 @@ async function checkResults() {
 async function refreshTips() {
   var today = new Date().toISOString().split('T')[0];
   loadTrackedTips(); loadElo(); loadForm(); loadWeights(); loadCalibration(); loadTeamStats(); loadH2H(); loadMatchDates(); loadModelCoeffs(); loadCachedOdds();
+  // Fetch real team data from football-data.org (once per day)
+  await fetchStandingsData();
   console.log('[REFRESH] Starting... oddsFetchDate=' + oddsFetchDate + ' today=' + today);
   if (oddsFetchDate !== today) {
     for (var si = 0; si < SPORTS.length; si++) {
@@ -1022,25 +1235,27 @@ async function refreshTips() {
         for (var fi = 0; fi < fixtures.length; fi++) {
           var m = mapFootballDataFixture(fixtures[fi]);
           var oddsMatch = hasOdds ? cachedOdds[sport.key].find(function(o) { return normalizeTeamName(o.home_team) === normalizeTeamName(m.homeTeam) && normalizeTeamName(o.away_team) === normalizeTeamName(m.awayTeam); }) : null;
-          if (oddsMatch) { var tip = buildSoccerTip(oddsMatch, sport); if (tip) allTips.push(tip); }
+          if (oddsMatch) { var tip = await buildSoccerTip(oddsMatch, sport); if (tip) allTips.push(tip); }
           else {
-            var hR = getDefaultRating(m.homeTeam), aR = getDefaultRating(m.awayTeam);
-            var p = dcPoissonPrediction(hR.attack, hR.defense, aR.attack, aR.defense, sport.key);
+            var hStats2 = getAttackDefense(sport.key, m.homeTeam, true);
+            var aStats2 = getAttackDefense(sport.key, m.awayTeam, false);
+            var p = dcPoissonPrediction(hStats2.attack, hStats2.defense, aStats2.attack, aStats2.defense, sport.key);
             var tt = '', conf = 70, o = '2.00', mr = 'Match Result';
             if (p.homeWin > p.awayWin && p.homeWin > p.draw) { tt = m.homeTeam + ' to Win'; conf = Math.min(96, Math.max(68, Math.round(65 + (p.homeWin - 0.40) * 55))); o = p.homeWin > 0.05 ? (1 / p.homeWin).toFixed(2) : '10.00'; }
             else if (p.awayWin > p.homeWin && p.awayWin > p.draw) { tt = m.awayTeam + ' to Win'; conf = Math.min(96, Math.max(68, Math.round(65 + (p.awayWin - 0.40) * 55))); o = p.awayWin > 0.05 ? (1 / p.awayWin).toFixed(2) : '10.00'; }
             else { tt = m.homeTeam + ' or Draw'; mr = 'Double Chance'; var cb = p.homeWin + p.draw; conf = Math.min(93, Math.max(70, Math.round(68 + (cb - 0.55) * 50))); o = cb > 0.05 ? (1 / cb).toFixed(2) : '10.00'; }
             conf = calibrateConfidence(conf);
             var features = buildFeatures(m.homeTeam, m.awayTeam, sport.key);
-            allTips.push({ type: sport.key, sport: sport.name, icon: sport.icon, match: m.homeTeam + ' vs ' + m.awayTeam, league: m.league, country: COUNTRY_MAP[sport.key] || '', marketType: 'h2h', market: mr, marketLine: null, kickoff: m.kickoff, pick: tt, odds: o, conf: conf, realOdds: null, bookmaker: '', valueBet: false, reason: 'AI DC-Poisson (' + p.expectedHomeGoals.toFixed(1) + '-' + p.expectedAwayGoals.toFixed(1) + ')', features: features });
+            var dataSrc = (hStats2.source === 'standings') ? ' REAL' : '';
+            allTips.push({ type: sport.key, sport: sport.name, icon: sport.icon, match: m.homeTeam + ' vs ' + m.awayTeam, league: m.league, country: COUNTRY_MAP[sport.key] || '', marketType: 'h2h', market: mr, marketLine: null, kickoff: m.kickoff, pick: tt, odds: o, conf: conf, realOdds: null, bookmaker: '', valueBet: false, reason: 'AI' + dataSrc + ' DC-Poisson (' + p.expectedHomeGoals.toFixed(1) + '-' + p.expectedAwayGoals.toFixed(1) + ')', features: features });
           }
         }
       }
       if (hasOdds) {
-        for (var oi = 0; oi < cachedOdds[sport.key].length; oi++) { var tip = buildSoccerTip(cachedOdds[sport.key][oi], sport); if (tip) allTips.push(tip); }
+        for (var oi = 0; oi < cachedOdds[sport.key].length; oi++) { var tip = await buildSoccerTip(cachedOdds[sport.key][oi], sport); if (tip) allTips.push(tip); }
       }
     } else if (sport.key.startsWith('soccer_')) {
-      for (var oi = 0; oi < cachedOdds[sport.key].length; oi++) { var tip = buildSoccerTip(cachedOdds[sport.key][oi], sport); if (tip) allTips.push(tip); }
+      for (var oi = 0; oi < cachedOdds[sport.key].length; oi++) { var tip = await buildSoccerTip(cachedOdds[sport.key][oi], sport); if (tip) allTips.push(tip); }
     } else {
       for (var oi = 0; oi < cachedOdds[sport.key].length; oi++) { var tip = buildNonSoccerTip(cachedOdds[sport.key][oi], sport); if (tip) allTips.push(tip); }
     }
@@ -2419,8 +2634,8 @@ app.listen(port, function() {
   if (WHATSAPP_INSTANCE_ID) console.log('[WHATSAPP] UltraMsg enabled — daily broadcast to ' + ADMIN_WHATSAPP);
   else console.log('[WHATSAPP] UltraMsg not configured — add WHATSAPP_INSTANCE_ID + WHATSAPP_TOKEN to .env');
   console.log('[AUTH] Admin login: ' + ADMIN_USER + ' / ' + ADMIN_PASS);
-  console.log('[AI] Dixon-Coles Poisson, logistic regression, per-sport config, team stats, H2H, fatigue tracking loaded');
+  console.log('[AI] Dixon-Coles Poisson + Real football-data.org standings + form + H2H + fatigue tracking loaded');
   startTelegramBot();
   scheduleDailyBroadcast();
-  setTimeout(function() { console.log('[AI] Initial model training starting...'); loadTrackedTips(); trainAllModels(); checkSportHealth(); }, 5000);
+  setTimeout(function() { console.log('[AI] Fetching real standings + training models...'); loadTrackedTips(); fetchStandingsData().then(function() { trainAllModels(); checkSportHealth(); }); }, 5000);
 });
