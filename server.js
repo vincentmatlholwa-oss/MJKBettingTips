@@ -66,7 +66,6 @@ const RACING_JSON_URL = 'https://www.racingandsports.com.au/todays-racing-json-v
 const RACING_FORM_BASE = 'https://www.racingandsports.com.au/form-guide';
 const TAB_NEWS_URL = 'https://news.tab.co.za';
 const DARTS_API_KEY = process.env.DARTS_SPORTDEVS_API_KEY || '';
-const DARTS_API_BASE = 'https://api.sportdevs.com/v1';
 
 const SPORTS = [
   { key: 'soccer_fifa_world_cup', name: 'FIFA World Cup', icon: '\u26BD' },
@@ -1785,78 +1784,81 @@ async function fetchDartsFixtures() {
   loadDartsFixtures();
   if (dartsFetchDate === today && cachedDartsFixtures.length > 0) return;
 
-  // Try SportDevs API if key available
-  if (DARTS_API_KEY) {
-    try {
-      var url = DARTS_API_BASE + '/darts/matches?token=' + DARTS_API_KEY;
-      var res = await fetch(url, { timeout: 10000 });
-      if (res.ok) {
-        var data = await res.json();
-        if (data && data.darts && data.darts.length > 0) {
-          cachedDartsFixtures = data.darts.map(function(m) {
-            return {
-              id: m.id || m.match_id,
-              home: m.home_team || m.local || m.player1 || 'TBD',
-              away: m.away_team || m.visitor || m.player2 || 'TBD',
-              league: m.league || m.tournament || 'PDC',
-              kickoff: m.start_time || m.date || m.kickoff || '',
-              odds: m.odds || null
-            };
-          }).filter(function(m) { return m.home !== 'TBD' && m.away !== 'TBD'; });
-          dartsFetchDate = today;
-          saveDartsFixtures();
-          console.log('[DARTS] SportDevs: ' + cachedDartsFixtures.length + ' fixtures');
-          return;
-        }
-      }
-    } catch (e) { console.log('[DARTS] SportDevs error: ' + (e.message || e).slice(0, 200)); }
-  }
-
-  // Fallback: scrape upcoming darts from The Odds API upcoming endpoint
+  // Strategy 1: The Odds API — check if darts is in season
   try {
     if (ODDS_API_KEY) {
-      var url2 = ODDS_API_BASE + '/sports/upcoming?apiKey=' + ODDS_API_KEY;
-      var res2 = await fetch(url2, { timeout: 8000 });
-      if (res2.ok) {
-        var upcoming = await res2.json();
+      var url = ODDS_API_BASE + '/sports/upcoming?apiKey=' + ODDS_API_KEY;
+      var res = await fetch(url, { timeout: 8000 });
+      if (res.ok) {
+        var upcoming = await res.json();
         var dartsEvents = upcoming.filter(function(e) { return e.sport_key && e.sport_key.indexOf('darts') >= 0; });
         if (dartsEvents.length > 0) {
           cachedDartsFixtures = dartsEvents.map(function(e) {
+            var bestOdds = null;
+            if (e.bookmakers && e.bookmakers.length > 0) {
+              for (var bi = 0; bi < e.bookmakers.length; bi++) {
+                var h2h = e.bookmakers[bi].markets && e.bookmakers[bi].markets.find(function(m) { return m.key === 'h2h'; });
+                if (h2h && h2h.outcomes && h2h.outcomes.length >= 2) {
+                  bestOdds = { home: h2h.outcomes[0].price, away: h2h.outcomes[1].price, book: e.bookmakers[bi].title };
+                  break;
+                }
+              }
+            }
             return {
               id: e.id,
               home: e.home_team || 'Player 1',
               away: e.away_team || 'Player 2',
               league: e.sport_title || 'Darts',
               kickoff: e.commence_time || '',
-              odds: e.bookmakers && e.bookmakers[0] ? e.bookmakers[0] : null
+              odds: bestOdds
             };
           });
           dartsFetchDate = today;
           saveDartsFixtures();
-          console.log('[DARTS] Odds API upcoming: ' + cachedDartsFixtures.length + ' darts events');
+          console.log('[DARTS] Odds API: ' + cachedDartsFixtures.length + ' upcoming events');
           return;
         }
       }
     }
-  } catch (e) { console.log('[DARTS] Odds API fallback error: ' + (e.message || e).slice(0, 200)); }
+  } catch (e) { console.log('[DARTS] Odds API error: ' + (e.message || e).slice(0, 150)); }
 
-  // Fallback: scrape from darts databases
-  try {
-    var scrapeUrl = 'https://www.dartsrankings.com/api/upcoming';
-    var scrapeRes = await fetch(scrapeUrl, { timeout: 8000, headers: { 'User-Agent': 'Mozilla/5.0 MJKTips/1.0' } });
-    if (scrapeRes.ok) {
-      var scrapeData = await scrapeRes.json();
-      if (Array.isArray(scrapeData) && scrapeData.length > 0) {
-        cachedDartsFixtures = scrapeData.slice(0, 20).map(function(m) {
-          return { id: m.id || '', home: m.player1 || m.home || 'TBD', away: m.player2 || m.away || 'TBD', league: m.tournament || m.event || 'PDC', kickoff: m.date || m.start_time || '', odds: null };
-        }).filter(function(m) { return m.home !== 'TBD' && m.away !== 'TBD'; });
-        dartsFetchDate = today;
-        saveDartsFixtures();
-        console.log('[DARTS] Scrape: ' + cachedDartsFixtures.length + ' fixtures');
-        return;
+  // Strategy 2: Scrape darts fixtures from public sources
+  var scrapeSources = [
+    { url: 'https://www.dartsrankings.com/api/matches', parse: function(d) { return Array.isArray(d) ? d : []; } },
+    { url: 'https://api.sofascore.com/api/v1/sport/darts/events/next/0', parse: function(d) { return (d && d.events) ? d.events : []; } }
+  ];
+  for (var si = 0; si < scrapeSources.length; si++) {
+    try {
+      var src = scrapeSources[si];
+      var scrapeRes = await fetch(src.url, { timeout: 8000, headers: { 'User-Agent': 'Mozilla/5.0 MJKTips/1.0', 'Accept': 'application/json' } });
+      if (scrapeRes.ok) {
+        var scrapeData = await scrapeRes.json();
+        var matches = src.parse(scrapeData);
+        if (matches.length > 0) {
+          cachedDartsFixtures = matches.slice(0, 30).map(function(m) {
+            var home = m.home_team || m.homeTeam?.name || m.participants?.[0]?.name || m.player1 || m.home || 'TBD';
+            var away = m.away_team || m.awayTeam?.name || m.participants?.[1]?.name || m.player2 || m.away || 'TBD';
+            var kickoff = m.start_time || m.date || m.kickoff || m.startTimestamp || '';
+            if (kickoff && typeof kickoff === 'number') kickoff = new Date(kickoff * 1000).toISOString();
+            return { id: m.id || '', home: home, away: away, league: m.tournament?.name || m.event || m.league || 'PDC Darts', kickoff: kickoff, odds: null };
+          }).filter(function(m) { return m.home !== 'TBD' && m.away !== 'TBD'; });
+          if (cachedDartsFixtures.length > 0) {
+            dartsFetchDate = today;
+            saveDartsFixtures();
+            console.log('[DARTS] Scraped: ' + cachedDartsFixtures.length + ' fixtures from source ' + (si + 1));
+            return;
+          }
+        }
       }
-    }
-  } catch (e) {}
+    } catch (e) {}
+  }
+
+  // Strategy 3: Use cached data if fresh enough (< 2 days old)
+  if (cachedDartsFixtures.length > 0) {
+    console.log('[DARTS] Using cached fixtures (' + cachedDartsFixtures.length + ' fixtures)');
+    dartsFetchDate = today;
+    return;
+  }
 
   dartsFetchDate = today;
   console.log('[DARTS] No data sources available');
@@ -1878,10 +1880,10 @@ function buildDartsTip(fixture) {
   var adjA = Math.max(1000, Math.min(2000, aElo + aFm));
   var prob = expectedScore(adjH, adjA);
 
-  // If we have odds from SportDevs, use market consensus
+  // If we have odds from scrape, use market consensus
   if (fixture.odds && typeof fixture.odds === 'object') {
-    var oH = parseFloat(fixture.odds.home || fixture.odds.player1) || 0;
-    var oA = parseFloat(fixture.odds.away || fixture.odds.player2) || 0;
+    var oH = parseFloat(fixture.odds.home) || 0;
+    var oA = parseFloat(fixture.odds.away) || 0;
     if (oH > 1 && oA > 1) {
       var mH = 1 / oH, mA = 1 / oA;
       prob = prob * 0.5 + mH * 0.5;
