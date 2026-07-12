@@ -65,6 +65,8 @@ const HORSE_RACING_API_BASE = 'https://api.odds-api.net/v1';
 const RACING_JSON_URL = 'https://www.racingandsports.com.au/todays-racing-json-v2';
 const RACING_FORM_BASE = 'https://www.racingandsports.com.au/form-guide';
 const TAB_NEWS_URL = 'https://news.tab.co.za';
+const DARTS_API_KEY = process.env.DARTS_SPORTDEVS_API_KEY || '';
+const DARTS_API_BASE = 'https://api.sportdevs.com/v1';
 
 const SPORTS = [
   { key: 'soccer_fifa_world_cup', name: 'FIFA World Cup', icon: '\u26BD' },
@@ -75,7 +77,9 @@ const SPORTS = [
   { key: 'rugbyleague_nrl', name: 'NRL', icon: '\uD83C\uDFC9' },
   { key: 'baseball_mlb', name: 'MLB', icon: '\u26BE' },
   { key: 'aussierules_afl', name: 'AFL', icon: '\uD83C\uDFC9' },
-  { key: 'cricket_international_t20', name: 'T20 Cricket', icon: '\uD83C\uDFCF' }
+  { key: 'cricket_international_t20', name: 'T20 Cricket', icon: '\uD83C\uDFCF' },
+  { key: 'mma_mixed_martial_arts', name: 'MMA/UFC', icon: '\uD83E\uDD4A' },
+  { key: 'darts_pdc', name: 'PDC Darts', icon: '\uD83C\uDFAF' }
 ];
 
 const COUNTRY_MAP = {
@@ -88,6 +92,8 @@ const COUNTRY_MAP = {
   'baseball_mlb': 'USA',
   'aussierules_afl': 'Australia',
   'cricket_international_t20': 'International',
+  'mma_mixed_martial_arts': 'International',
+  'darts_pdc': 'International',
   'horse_racing': 'International'
 };
 
@@ -102,6 +108,8 @@ const SPORT_CONFIG = {
   'baseball_mlb': { hasDraw: false, homeAdv: 1.10, kFactor: 36, formWindow: 5, minConf: 65, maxConf: 95, usePoisson: false, dcRho: 0 },
   'aussierules_afl': { hasDraw: true, homeAdv: 1.15, kFactor: 36, formWindow: 4, minConf: 65, maxConf: 95, usePoisson: false, dcRho: -0.08 },
   'cricket_international_t20': { hasDraw: false, homeAdv: 1.10, kFactor: 36, formWindow: 4, minConf: 65, maxConf: 95, usePoisson: false, dcRho: 0 },
+  'mma_mixed_martial_arts': { hasDraw: false, homeAdv: 1.0, kFactor: 48, formWindow: 3, minConf: 65, maxConf: 95, usePoisson: false, dcRho: 0 },
+  'darts_pdc': { hasDraw: false, homeAdv: 1.0, kFactor: 32, formWindow: 3, minConf: 65, maxConf: 95, usePoisson: false, dcRho: 0 },
   'horse_racing': { hasDraw: false, homeAdv: 1.0, kFactor: 32, formWindow: 3, minConf: 60, maxConf: 92, usePoisson: false, dcRho: 0 }
 };
 function getCfg(key) { return SPORT_CONFIG[key] || { hasDraw: true, homeAdv: 1.10, kFactor: 32, formWindow: 5, minConf: 68, maxConf: 96, usePoisson: false, dcRho: 0 }; }
@@ -1357,6 +1365,8 @@ async function refreshTips() {
   }
   // Fetch horse racing (free, no API key needed)
   await fetchHorseRacing();
+  // Fetch darts fixtures
+  await fetchDartsFixtures();
   var allTips = [];
   if (cachedRacingEvents && cachedRacingEvents.length > 0) {
     var racingTips = [];
@@ -1386,6 +1396,10 @@ async function refreshTips() {
       }
     } else if (hasOdds) {
       for (var oi = 0; oi < cachedOdds[sport.key].length; oi++) { var tip = buildNonSoccerTip(cachedOdds[sport.key][oi], sport); if (tip) allTips.push(tip); }
+    }
+    // Darts: use scraped fixtures with our own AI
+    if (sport.key === 'darts_pdc' && cachedDartsFixtures.length > 0) {
+      for (var di = 0; di < cachedDartsFixtures.length; di++) { var tip = buildDartsTip(cachedDartsFixtures[di]); if (tip) allTips.push(tip); }
     }
     // Non-soccer without odds: skip (no reliable data source)
   }
@@ -1754,6 +1768,150 @@ function buildHorseRacingTip(event) {
     conf: conf3, realOdds: null, bookmaker: '', valueBet: false,
     reason: 'Horse racing card — ' + country + ' — ' + timeStr + (formUrl ? ' | ' + formUrl : ''),
     features: [0, 0, 0, 0, 0, 0, 0, 1]
+  };
+}
+
+// === DARTS (SportDevs free API: 300 req/day) ===
+var cachedDartsFixtures = [];
+var dartsFetchDate = '';
+const DARTS_FIXTURES_FILE = path.join(__dirname, 'data', 'darts_fixtures.json');
+
+function loadDartsFixtures() { cachedDartsFixtures = loadJSON(DARTS_FIXTURES_FILE, []); }
+function saveDartsFixtures() { saveJSON(DARTS_FIXTURES_FILE, cachedDartsFixtures); }
+
+async function fetchDartsFixtures() {
+  var today = new Date().toISOString().slice(0, 10);
+  if (dartsFetchDate === today && cachedDartsFixtures.length > 0) return;
+  loadDartsFixtures();
+  if (dartsFetchDate === today && cachedDartsFixtures.length > 0) return;
+
+  // Try SportDevs API if key available
+  if (DARTS_API_KEY) {
+    try {
+      var url = DARTS_API_BASE + '/darts/matches?token=' + DARTS_API_KEY;
+      var res = await fetch(url, { timeout: 10000 });
+      if (res.ok) {
+        var data = await res.json();
+        if (data && data.darts && data.darts.length > 0) {
+          cachedDartsFixtures = data.darts.map(function(m) {
+            return {
+              id: m.id || m.match_id,
+              home: m.home_team || m.local || m.player1 || 'TBD',
+              away: m.away_team || m.visitor || m.player2 || 'TBD',
+              league: m.league || m.tournament || 'PDC',
+              kickoff: m.start_time || m.date || m.kickoff || '',
+              odds: m.odds || null
+            };
+          }).filter(function(m) { return m.home !== 'TBD' && m.away !== 'TBD'; });
+          dartsFetchDate = today;
+          saveDartsFixtures();
+          console.log('[DARTS] SportDevs: ' + cachedDartsFixtures.length + ' fixtures');
+          return;
+        }
+      }
+    } catch (e) { console.log('[DARTS] SportDevs error: ' + (e.message || e).slice(0, 200)); }
+  }
+
+  // Fallback: scrape upcoming darts from The Odds API upcoming endpoint
+  try {
+    if (ODDS_API_KEY) {
+      var url2 = ODDS_API_BASE + '/sports/upcoming?apiKey=' + ODDS_API_KEY;
+      var res2 = await fetch(url2, { timeout: 8000 });
+      if (res2.ok) {
+        var upcoming = await res2.json();
+        var dartsEvents = upcoming.filter(function(e) { return e.sport_key && e.sport_key.indexOf('darts') >= 0; });
+        if (dartsEvents.length > 0) {
+          cachedDartsFixtures = dartsEvents.map(function(e) {
+            return {
+              id: e.id,
+              home: e.home_team || 'Player 1',
+              away: e.away_team || 'Player 2',
+              league: e.sport_title || 'Darts',
+              kickoff: e.commence_time || '',
+              odds: e.bookmakers && e.bookmakers[0] ? e.bookmakers[0] : null
+            };
+          });
+          dartsFetchDate = today;
+          saveDartsFixtures();
+          console.log('[DARTS] Odds API upcoming: ' + cachedDartsFixtures.length + ' darts events');
+          return;
+        }
+      }
+    }
+  } catch (e) { console.log('[DARTS] Odds API fallback error: ' + (e.message || e).slice(0, 200)); }
+
+  // Fallback: scrape from darts databases
+  try {
+    var scrapeUrl = 'https://www.dartsrankings.com/api/upcoming';
+    var scrapeRes = await fetch(scrapeUrl, { timeout: 8000, headers: { 'User-Agent': 'Mozilla/5.0 MJKTips/1.0' } });
+    if (scrapeRes.ok) {
+      var scrapeData = await scrapeRes.json();
+      if (Array.isArray(scrapeData) && scrapeData.length > 0) {
+        cachedDartsFixtures = scrapeData.slice(0, 20).map(function(m) {
+          return { id: m.id || '', home: m.player1 || m.home || 'TBD', away: m.player2 || m.away || 'TBD', league: m.tournament || m.event || 'PDC', kickoff: m.date || m.start_time || '', odds: null };
+        }).filter(function(m) { return m.home !== 'TBD' && m.away !== 'TBD'; });
+        dartsFetchDate = today;
+        saveDartsFixtures();
+        console.log('[DARTS] Scrape: ' + cachedDartsFixtures.length + ' fixtures');
+        return;
+      }
+    }
+  } catch (e) {}
+
+  dartsFetchDate = today;
+  console.log('[DARTS] No data sources available');
+}
+
+function buildDartsTip(fixture) {
+  var sportKey = 'darts_pdc';
+  if (disabledSports[sportKey]) return null;
+  var cfg = getCfg(sportKey);
+  var home = fixture.home, away = fixture.away;
+  var kickoff = fixture.kickoff || '';
+  if (!kickoff || new Date(kickoff).getTime() < Date.now()) return null;
+
+  var hElo = getElo(sportKey, home);
+  var aElo = getElo(sportKey, away);
+  var hFm = formModifier(sportKey, home);
+  var aFm = formModifier(sportKey, away);
+  var adjH = Math.max(1000, Math.min(2000, hElo + hFm));
+  var adjA = Math.max(1000, Math.min(2000, aElo + aFm));
+  var prob = expectedScore(adjH, adjA);
+
+  // If we have odds from SportDevs, use market consensus
+  if (fixture.odds && typeof fixture.odds === 'object') {
+    var oH = parseFloat(fixture.odds.home || fixture.odds.player1) || 0;
+    var oA = parseFloat(fixture.odds.away || fixture.odds.player2) || 0;
+    if (oH > 1 && oA > 1) {
+      var mH = 1 / oH, mA = 1 / oA;
+      prob = prob * 0.5 + mH * 0.5;
+    }
+  }
+
+  var pick = prob > 0.5 ? home : away;
+  var pickProb = Math.max(prob, 1 - prob);
+  var odds = prob > 0.5 ? (1 / prob).toFixed(2) : (1 / (1 - prob)).toFixed(2);
+
+  var features = buildFeatures(home, away, sportKey);
+  var rawLR = predictLR(sportKey, features);
+  if (rawLR !== null) {
+    pickProb = pickProb * 0.6 + Math.max(rawLR, 1 - rawLR) * 0.4;
+    pick = rawLR > 0.5 ? home : away;
+    odds = (1 / pickProb).toFixed(2);
+  }
+
+  var confidence = confidenceFromProb(pickProb, 0.6);
+  var formNote = (Math.abs(hFm) > 5 || Math.abs(aFm) > 5) ? ' Form ' + (hFm > 0 ? '+' : '') + hFm + 'v' + (aFm > 0 ? '+' : '') + aFm : '';
+  var reason = 'AI Darts' + (rawLR !== null ? ' ML' : '') + ' Elo ' + Math.round(adjH) + 'v' + Math.round(adjA) + formNote;
+
+  return {
+    type: sportKey, sport: 'PDC Darts', icon: '\uD83C\uDFAF',
+    match: home + ' vs ' + away, league: fixture.league || 'PDC Darts',
+    country: 'International', marketType: 'h2h', market: 'Match Winner', marketLine: null,
+    kickoff: kickoff, pick: pick + ' to Win', odds: odds,
+    conf: Math.min(cfg.maxConf, Math.max(cfg.minConf, confidence)),
+    realOdds: null, bookmaker: '', valueBet: false,
+    reason: reason, features: features
   };
 }
 

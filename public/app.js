@@ -817,6 +817,8 @@ function renderTip(t, accaIdx) {
   else if (t.type && t.type.indexOf('aussierules_') === 0) sportClass = 'sport-aussierules';
   else if (t.type && t.type.indexOf('cricket_') === 0) sportClass = 'sport-cricket';
   else if (t.type === 'horse_racing') sportClass = 'sport-horse';
+  else if (t.type && t.type.indexOf('mma_') === 0) sportClass = 'sport-mma';
+  else if (t.type && t.type.indexOf('darts_') === 0) sportClass = 'sport-darts';
   var oddsHtml = '<div style="text-align:right;flex-shrink:0;"><div class="tip-odds">'+t.odds+'</div><div class="tip-odds-label">AI ODDS</div></div>';
   if (t.realOdds && t.realOdds.home) {
     var isHomePick = t.pick && t.match && t.pick.indexOf(t.match.split(' vs ')[0]) !== -1;
@@ -833,7 +835,7 @@ function renderTip(t, accaIdx) {
   var mktBadge = '';
   if (t.marketType === 'ou') mktBadge = '<span class="mkt-badge ou">O/U</span>';
   else if (t.marketType === 'btts') mktBadge = '<span class="mkt-badge btts">BTTS</span>';
-  else if (t.marketType === 'h2h') mktBadge = '<span class="mkt-badge h2h">1X2</span>';
+  else if (t.marketType === 'h2h') mktBadge = '<span class="mkt-badge h2h">' + ((t.type && (t.type.indexOf('mma_') === 0 || t.type.indexOf('darts_') === 0)) ? 'WINNER' : '1X2') + '</span>';
   return '<div class="tip-card'+(t.valueBet?' value-card':'')+'" data-type="'+(t.type||'')+'" data-conf="'+t.conf+'" data-match="'+(t.match||'').toLowerCase()+'" data-league="'+(t.league||'').toLowerCase()+'"><div class="tip-sport-bar '+sportClass+'"><span>'+icon+' '+(t.sport||'Sport')+'</span>'+countryHtml+leagueHtml+mktBadge+'</div><div class="tip-body"><div class="tip-match">'+t.match+'</div><div class="tip-time">🕐 '+timeStr+'</div><div class="tip-pick"><div style="min-width:0;"><div class="tip-pick-label">'+t.market+'</div><div class="tip-pick-val">'+t.pick+' '+valueBadge+'</div></div>'+oddsHtml+'</div><div class="conf-bar"><div class="conf-fill" style="width:'+t.conf+'%;background:linear-gradient(90deg,'+c+'88,'+c+')"></div></div><div class="tip-footer"><span style="color:'+c+';font-weight:700">★ '+t.conf+'% Confidence</span><span class="tip-status">⏳ Pending</span></div><div class="banker-reason" style="margin-top:10px;font-size:11px;">'+t.reason+'</div>'+btn+oddsBtn+shareBtn+'</div></div>';
 }
 function shareTip(matchEnc, pickEnc, platform) {
@@ -1137,7 +1139,7 @@ function fetchStats() {
   }).catch(function() {});
 }
 function getSportIcon(type) {
-  var icons = { 'soccer_fifa_world_cup':'⚽','soccer_epl':'⚽','tennis_atp_wimbledon':'🎾','tennis_wta_wimbledon':'🎾','americanfootball_nfl':'🏈','rugbyleague_nrl':'🏉','baseball_mlb':'⚾','aussierules_afl':'🏉','cricket_international_t20':'🏏','horse_racing':'🏇' };
+  var icons = { 'soccer_fifa_world_cup':'⚽','soccer_epl':'⚽','tennis_atp_wimbledon':'🎾','tennis_wta_wimbledon':'🎾','americanfootball_nfl':'🏈','rugbyleague_nrl':'🏉','baseball_mlb':'⚾','aussierules_afl':'🏉','cricket_international_t20':'🏏','horse_racing':'🏇','mma_mixed_martial_arts':'🥊','darts_pdc':'🎯' };
   return icons[type] || '⚽';
 }
 function fetchHistory() {
