@@ -2478,7 +2478,31 @@ function getAPIFootballPrediction(homeTeam, awayTeam) {
   return null;
 }
 
-// === STANDALONE TIP BUILDER: Generate tips directly from BSD predictions when no odds available ===
+// === OUR AI MODEL: Standalone prediction using ELO + Poisson (no odds needed) ===
+function generateOurAIPrediction(home, away, sportKey) {
+  var cfg = getCfg(sportKey);
+  var hStats = getAttackDefense(sportKey, home, true);
+  var aStats = getAttackDefense(sportKey, away, false);
+  var poisson = dcPoissonPrediction(hStats.attack, hStats.defense, aStats.attack, aStats.defense, sportKey);
+  var fmHome = formModifier(sportKey, home);
+  var fmAway = formModifier(sportKey, away);
+  var adjH = Math.max(1000, Math.min(2000, getElo(sportKey, home) + HOME_ADVANTAGE_ELO + fmHome));
+  var adjA = Math.max(1000, Math.min(2000, getElo(sportKey, away) + fmAway));
+  var eloHomeRaw = expectedScore(adjH, adjA);
+  var eloDraw = cfg.hasDraw ? 0.25 : 0;
+  var eloHW = eloHomeRaw * (1 - eloDraw);
+  var eloAW = (1 - eloHomeRaw) * (1 - eloDraw);
+  // Blend: 60% Poisson, 40% ELO (no market weight since no odds)
+  var predH = poisson.homeWin * 0.60 + eloHW * 0.40;
+  var predA = poisson.awayWin * 0.60 + eloAW * 0.40;
+  var predD = cfg.hasDraw ? (poisson.draw * 0.60 + eloDraw * 0.40) : 0;
+  var total = predH + predA + predD;
+  if (total > 0) { predH /= total; predA /= total; predD /= total; }
+  var pick = predH >= predA ? (predH >= predD ? 'H' : 'D') : (predA >= predD ? 'A' : 'D');
+  return { homeWin: predH, awayWin: predA, draw: predD, pick: pick, homeElo: adjH, awayElo: adjA, lambdaHome: poisson.expectedHomeGoals, lambdaAway: poisson.expectedAwayGoals, source: hStats.source };
+}
+
+// === STANDALONE TIP BUILDER: 3-AI curator — runs all 3 models, only shows picks they agree on ===
 function buildBSDStandaloneTip(bsdKey) {
   var bsd = bsdPredictions[bsdKey];
   if (!bsd || !bsd.kickoff) return null;
@@ -2498,21 +2522,7 @@ function buildBSDStandaloneTip(bsdKey) {
   // Skip if kickoff is in the past
   var kickoffTime = new Date(bsd.kickoff).getTime();
   if (!kickoffTime || kickoffTime <= Date.now()) return null;
-  // Determine pick from probabilities
-  var pick, prob, price;
-  if (bsd.predictedResult === 'H' || bsd.home > bsd.away && bsd.home > bsd.draw) {
-    pick = home + ' to Win'; prob = bsd.home;
-    price = prob > 0.6 ? (1 + 1 / prob).toFixed(2) : prob > 0.45 ? (1 + 1 / prob * 0.95).toFixed(2) : (1 + 1 / prob * 0.9).toFixed(2);
-  } else if (bsd.predictedResult === 'A' || bsd.away > bsd.home && bsd.away > bsd.draw) {
-    pick = away + ' to Win'; prob = bsd.away;
-    price = prob > 0.6 ? (1 + 1 / prob).toFixed(2) : prob > 0.45 ? (1 + 1 / prob * 0.95).toFixed(2) : (1 + 1 / prob * 0.9).toFixed(2);
-  } else {
-    pick = 'Draw'; prob = bsd.draw;
-    price = prob > 0.3 ? (1 + 1 / prob * 0.9).toFixed(2) : '3.50';
-  }
-  if (prob < 0.28) return null;
   // Map league to sport key and country
-  var leagueLower = (bsd.league || '').toLowerCase();
   var sportKey = 'soccer_epl';
   var country = '';
   if (leagueLower.indexOf('la liga') !== -1 || leagueLower.indexOf('spain') !== -1) { sportKey = 'soccer_spain_la_liga'; country = 'Spain'; }
@@ -2535,18 +2545,52 @@ function buildBSDStandaloneTip(bsdKey) {
   else if (leagueLower.indexOf('japan') !== -1) { country = 'Japan'; }
   else if (leagueLower.indexOf('south korea') !== -1) { country = 'South Korea'; }
   else if (leagueLower.indexOf('saudi') !== -1) { country = 'Saudi Arabia'; }
-  // Use API-Football prediction if available for cross-check
+
+  // === AI 1: BSD CatBoost ML ===
+  var bsdPick = bsd.predictedResult || (bsd.home >= bsd.away && bsd.home >= bsd.draw ? 'H' : (bsd.away >= bsd.draw ? 'A' : 'D'));
+  var bsdProb = bsdPick === 'H' ? bsd.home : bsdPick === 'A' ? bsd.away : bsd.draw;
+
+  // === AI 2: Our ELO + Poisson model (no odds needed) ===
+  var ourPred = generateOurAIPrediction(home, away, sportKey);
+
+  // === AI 3: API-Football Poisson/statistics ===
   var afPred = getAPIFootballPrediction(home, away);
+
+  // === CURATOR: Collect all picks and check agreement ===
+  var picks = [bsdPick];
+  var labels = ['BSD CatBoost'];
+  if (ourPred) { picks.push(ourPred.pick); labels.push('Our AI (ELO+Poisson)'); }
+  if (afPred && afPred.winnerPick) { picks.push(afPred.winnerPick); labels.push('API-Football'); }
+  var totalModels = picks.length;
+  var uniquePicks = picks.filter(function(v, i, a) { return a.indexOf(v) === i; });
+  var unanimous = uniquePicks.length === 1;
+  var agreeCount = 0;
+  for (var i = 1; i < picks.length; i++) { if (picks[i] === picks[0]) agreeCount++; }
+  var majority = agreeCount >= Math.floor(totalModels / 2);
+
+  // REQUIRE: At least 2 out of 3 AIs must agree — no solo picks
+  if (totalModels < 2 || !majority) return null;
+
+  // Build pick text and probability
+  var pickText, prob, price;
+  if (bsdPick === 'H') { pickText = home + ' to Win'; prob = bsd.home; }
+  else if (bsdPick === 'A') { pickText = away + ' to Win'; prob = bsd.away; }
+  else { pickText = 'Draw'; prob = bsd.draw; }
+  price = prob > 0.6 ? (1 + 1 / prob).toFixed(2) : prob > 0.45 ? (1 + 1 / prob * 0.95).toFixed(2) : (1 + 1 / prob * 0.9).toFixed(2);
+  if (prob < 0.28) return null;
+
+  // Confidence: blend all agreeing models
   var conf = Math.round(prob * 100);
-  // Ensemble: if AF agrees, boost
-  if (afPred && afPred.winnerPick) {
-    var afPick = afPred.winnerPick === 'H' ? 'H' : afPred.winnerPick === 'A' ? 'A' : 'D';
-    var ourPick = prob === bsd.home ? 'H' : prob === bsd.away ? 'A' : 'D';
-    if (afPick === ourPick) conf = Math.min(96, conf + 8);
-  }
-  // Cap confidence
-  conf = Math.max(65, Math.min(96, conf));
-  var reason = 'BSD CatBoost [' + (bsd.league || 'Football') + '] | xG ' + (bsd.xgHome || 0).toFixed(1) + '-' + (bsd.xgAway || 0).toFixed(1) + ' | Model ' + (bsd.modelVersion || 'v5');
+  if (unanimous) conf = Math.min(96, conf + 10); // All 3 agree = big boost
+  else if (majority) conf = Math.min(92, conf + 5); // 2/3 agree = moderate boost
+
+  // Build reason showing which AIs agreed
+  var agreeLabels = [];
+  for (var i = 0; i < picks.length; i++) { if (picks[i] === bsdPick) agreeLabels.push(labels[i]); }
+  var reason = agreeLabels.join(' + ') + ' agree | xG ' + (bsd.xgHome || 0).toFixed(1) + '-' + (bsd.xgAway || 0).toFixed(1);
+  if (unanimous) reason += ' | UNANIMOUS ' + totalModels + '/' + totalModels;
+  else reason += ' | ' + agreeLabels.length + '/' + totalModels + ' MAJORITY';
+
   return {
     type: sportKey, sport: 'Football', icon: '⚽',
     match: home + ' vs ' + away,
@@ -2554,12 +2598,12 @@ function buildBSDStandaloneTip(bsdKey) {
     country: country,
     marketType: 'h2h', market: 'Match Result', marketLine: null,
     kickoff: bsd.kickoff,
-    pick: pick, odds: price, conf: conf,
-    bookmaker: 'BSD AI',
+    pick: pickText, odds: price, conf: conf,
+    bookmaker: 'AI Ensemble',
     valueBet: false,
     reason: reason,
-    bsdAgree: true,
-    tripleAgree: !!afPred && (afPred.winnerPick === (prob === bsd.home ? 'H' : prob === bsd.away ? 'A' : 'D'))
+    bsdAgree: bsdPick === (ourPred ? ourPred.pick : bsdPick),
+    tripleAgree: unanimous
   };
 }
 
