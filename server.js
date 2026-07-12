@@ -123,7 +123,7 @@ const SPORT_CONFIG = {
   'tennis_wta_wimbledon': { hasDraw: false, homeAdv: 1.05, kFactor: 48, formWindow: 3, minConf: 65, maxConf: 96, usePoisson: false, dcRho: 0 },
   'americanfootball_nfl': { hasDraw: false, homeAdv: 1.15, kFactor: 40, formWindow: 4, minConf: 65, maxConf: 95, usePoisson: false, dcRho: 0 },
   'rugbyleague_nrl': { hasDraw: true, homeAdv: 1.15, kFactor: 36, formWindow: 4, minConf: 65, maxConf: 95, usePoisson: false, dcRho: -0.08 },
-  'baseball_mlb': { hasDraw: false, homeAdv: 1.10, kFactor: 36, formWindow: 5, minConf: 65, maxConf: 95, usePoisson: false, dcRho: 0 },
+  'baseball_mlb': { hasDraw: false, homeAdv: 1.15, kFactor: 40, formWindow: 5, minConf: 65, maxConf: 90, usePoisson: false, dcRho: 0 },
   'aussierules_afl': { hasDraw: true, homeAdv: 1.15, kFactor: 36, formWindow: 4, minConf: 65, maxConf: 95, usePoisson: false, dcRho: -0.08 },
   'cricket_international_t20': { hasDraw: false, homeAdv: 1.10, kFactor: 36, formWindow: 4, minConf: 65, maxConf: 95, usePoisson: false, dcRho: 0 },
   'mma_mixed_martial_arts': { hasDraw: false, homeAdv: 1.0, kFactor: 48, formWindow: 3, minConf: 65, maxConf: 95, usePoisson: false, dcRho: 0 },
@@ -687,7 +687,8 @@ function saveWeights() { saveJSON(WEIGHTS_FILE, adaptiveWeights); }
 function getWeights(sportKey) {
   if (!adaptiveWeights[sportKey]) {
     const isSoccer = sportKey.startsWith('soccer_');
-    adaptiveWeights[sportKey] = isSoccer ? { eloWeight: 0.30, poissonWeight: 0.35, marketWeight: 0.35, samples: 0 } : { eloWeight: 0.50, poissonWeight: 0, marketWeight: 0.50, samples: 0 };
+    const isBaseball = sportKey === 'baseball_mlb';
+    adaptiveWeights[sportKey] = isSoccer ? { eloWeight: 0.30, poissonWeight: 0.35, marketWeight: 0.35, samples: 0 } : isBaseball ? { eloWeight: 0.40, poissonWeight: 0, marketWeight: 0.60, samples: 0 } : { eloWeight: 0.50, poissonWeight: 0, marketWeight: 0.50, samples: 0 };
     saveWeights();
   }
   return adaptiveWeights[sportKey];
@@ -1218,6 +1219,75 @@ async function buildSoccerTip(oddsMatch, sport) {
   return { type: sport.key, sport: sport.name, icon: sport.icon, match: home + ' vs ' + away, league: sport.name, country: COUNTRY_MAP[sport.key] || '', marketType: best.marketType, market: best.market, marketLine: best.line, kickoff: oddsMatch.commence_time, pick: best.pick, odds: best.odds, conf: Math.min(cfg.maxConf, Math.max(cfg.minConf, best.conf)), realOdds: consensus ? { home: consensus.bestHomePrice || null, away: consensus.bestAwayPrice || null, draw: consensus.bestDrawPrice || null } : null, bookmaker: best.bookmaker, valueBet: best.valueBet, reason: reason, features: features };
 }
 
+// === DEDICATED BASEBALL PREDICTION ENGINE ===
+// Baseball is highly random — focus on value detection, not confidence
+function buildBaseballTip(oddsMatch, sport) {
+  if (disabledSports[sport.key]) return null;
+  const home = oddsMatch.home_team, away = oddsMatch.away_team;
+  const cfg = getCfg(sport.key);
+  const consensus = marketConsensus(home, away, oddsMatch, sport);
+  if (!consensus) return null;
+  const hStats = getAttackDefense(sport.key, home, true);
+  const aStats = getAttackDefense(sport.key, away, false);
+  // Baseball home advantage is ~54% (higher than most sports)
+  const BASEBALL_HOME_ADV = 60;
+  const fmHome = formModifier(sport.key, home);
+  const adjustedElo = Math.max(1000, Math.min(2000, getElo(sport.key, home) + BASEBALL_HOME_ADV + fmHome));
+  const fmAway = formModifier(sport.key, away);
+  const adjustedEloA = Math.max(1000, Math.min(2000, getElo(sport.key, away) + fmAway));
+  const rawElo = expectedScore(adjustedElo, adjustedEloA);
+  const eloHome = rawElo;
+  const eloAway = 1 - rawElo;
+  // Baseball: use rating diff more aggressively (team quality matters more in baseball)
+  const ratingDiff = ((hStats.attack + hStats.defense) - (aStats.attack + aStats.defense)) / 15;
+  // Weight: 40% ELO, 60% market (baseball markets are efficient)
+  const eW = 0.40, mW = 0.60;
+  // ML model
+  const features = buildFeatures(home, away, sport.key);
+  const rawLR = predictLR(sport.key, features);
+  let blendHome, blendAway;
+  if (rawLR !== null) {
+    const mlHome = rawLR, mlAway = 1 - rawLR;
+    blendHome = mlHome * 0.25 + (eloHome * eW + consensus.homeWin * mW + Math.max(0, ratingDiff) * 0.15) * 0.75;
+    blendAway = mlAway * 0.25 + (eloAway * eW + consensus.awayWin * mW + Math.max(0, -ratingDiff) * 0.15) * 0.75;
+  } else {
+    blendHome = eloHome * eW + consensus.homeWin * mW + Math.max(0, ratingDiff) * 0.15;
+    blendAway = eloAway * eW + consensus.awayWin * mW + Math.max(0, -ratingDiff) * 0.15;
+  }
+  const totalB = blendHome + blendAway;
+  const nHome = totalB > 0 ? blendHome / totalB : 0.5;
+  const nAway = totalB > 0 ? blendAway / totalB : 0.5;
+  // Baseball: only pick if model disagrees with market by >8% (value bet)
+  const marketHome = consensus.homeWin;
+  const marketAway = consensus.awayWin;
+  var pickTeam, pickProb, pickMarket, valueMargin;
+  if (nHome > nAway) {
+    pickTeam = home; pickProb = nHome; pickMarket = marketHome;
+    valueMargin = nHome - marketHome;
+  } else {
+    pickTeam = away; pickProb = nAway; pickMarket = marketAway;
+    valueMargin = nAway - marketAway;
+  }
+  // Require minimum value edge — baseball is too random for marginal picks
+  if (valueMargin < 0.06) return null;
+  // Require minimum model confidence — don't pick coin flips
+  if (pickProb < 0.52) return null;
+  var tipText = pickTeam + ' to Win';
+  var odds = pickTeam === home ? (consensus.bestHomePrice > 0 ? consensus.bestHomePrice.toFixed(2) : (1 / nHome).toFixed(2)) : (consensus.bestAwayPrice > 0 ? consensus.bestAwayPrice.toFixed(2) : (1 / nAway).toFixed(2));
+  var bookmaker = pickTeam === home ? consensus.bestHomeBook : consensus.bestAwayBook;
+  // Baseball confidence is capped lower — max 85% due to inherent randomness
+  var confidence = confidenceFromProb(pickProb, consensus.agreement);
+  confidence = Math.min(85, Math.max(65, confidence));
+  // Reduce confidence further for small value edges
+  if (valueMargin < 0.10) confidence = Math.min(confidence, 75);
+  var formNote = (Math.abs(fmHome) > 5 || Math.abs(fmAway) > 5) ? ' Form ' + (fmHome > 0 ? '+' : '') + fmHome + 'v' + (fmAway > 0 ? '+' : '') + fmAway : '';
+  var h2h = getH2H(sport.key, home, away);
+  var h2hNote = h2h ? ' H2H ' + h2h.total : '';
+  var valueNote = ' Value +' + (valueMargin * 100).toFixed(0) + '%';
+  var reason = 'Baseball AI' + (rawLR !== null ? ' ML' : '') + ' Elo ' + Math.round(adjustedElo) + 'v' + Math.round(adjustedEloA) + formNote + h2hNote + valueNote + ' ' + consensus.totalBooks + 'books';
+  return { type: sport.key, sport: sport.name, icon: sport.icon, match: home + ' vs ' + away, league: sport.name, country: COUNTRY_MAP[sport.key] || '', marketType: 'h2h', market: 'Match Winner', marketLine: null, kickoff: oddsMatch.commence_time, pick: tipText, odds: odds, conf: confidence, realOdds: { home: consensus.bestHomePrice || null, away: consensus.bestAwayPrice || null, draw: null }, bookmaker: bookmaker, valueBet: true, reason: reason, features: features };
+}
+
 function buildNonSoccerTip(oddsMatch, sport) {
   if (disabledSports[sport.key]) return null;
   const home = oddsMatch.home_team, away = oddsMatch.away_team;
@@ -1288,15 +1358,91 @@ function determineWin(tip, home, away, hScore, aScore) {
   return false;
 }
 
+function applyResultToTip(tip, home, away, hScore, aScore, now) {
+  var won = determineWin(tip, home, away, hScore, aScore);
+  tip.result = won ? 'won' : 'lost';
+  tip.checkedAt = now.toISOString();
+  var scoreA = hScore > aScore ? 1 : (hScore === aScore ? 0.5 : 0);
+  const cfg = getCfg(tip.type);
+  updateElo(tip.type, home, away, scoreA, cfg.kFactor);
+  updateForm(tip.type, home, away, scoreA);
+  updateWeights(tip.type, won);
+  recordCalibration(tip.conf, won);
+  updateTeamStats(tip.type, home, away, hScore, aScore);
+  updateH2H(tip.type, home, away, hScore, aScore);
+  updateMatchDate(home, tip.kickoff);
+  updateMatchDate(away, tip.kickoff);
+  logFeature(tip.type, tip.features, won);
+  trainSportModel(tip.type);
+  console.log('[RESULTS] ' + tip.match + ' → ' + tip.result.toUpperCase() + ' (predicted: ' + tip.pick + ')');
+  return won;
+}
+
+async function checkCricketResult(tip, home, away, now) {
+  try {
+    var tipKickoff = new Date(tip.kickoff);
+    var dateFrom = new Date(tipKickoff.getTime() - 86400000).toISOString().split('T')[0];
+    var dateTo = new Date(now.getTime() + 86400000).toISOString().split('T')[0];
+    var smUrl = 'https://api.sportmonks.com/v3/cricket/fixtures/between/' + dateFrom + '/' + dateTo + '?api_token=' + process.env.SPORTMONKS_API_KEY + '&include=scorecard';
+    var smRes = await fetch(smUrl, { signal: AbortSignal.timeout(8000) });
+    if (!smRes.ok) return false;
+    var smData = await smRes.json();
+    if (!smData.data || smData.data.length === 0) return false;
+    var fixture = smData.data.find(function(f) {
+      var fHome = (f.home_team && f.home_team.name) || '';
+      var fAway = (f.away_team && f.away_team.name) || '';
+      return (normalizeTeamName(fHome).indexOf(normalizeTeamName(home)) >= 0 || normalizeTeamName(home).indexOf(normalizeTeamName(fHome)) >= 0) &&
+             (normalizeTeamName(fAway).indexOf(normalizeTeamName(away)) >= 0 || normalizeTeamName(away).indexOf(normalizeTeamName(fAway)) >= 0) &&
+             f.status && f.status === 'Finished';
+    });
+    if (!fixture || !fixture.scorecard) return false;
+    var sc = fixture.scorecard;
+    var hRuns = 0, aRuns = 0;
+    if (sc.innings && sc.innings.length >= 2) {
+      hRuns = sc.innings[0].score || 0;
+      aRuns = sc.innings[1].score || 0;
+    }
+    if (hRuns === 0 && aRuns === 0) return false;
+    applyResultToTip(tip, home, away, hRuns, aRuns, now);
+    return true;
+  } catch (e) { return false; }
+}
+
+async function checkSportMonksResult(tip, home, away, now) {
+  try {
+    var tipKickoff = new Date(tip.kickoff);
+    var dateFrom = new Date(tipKickoff.getTime() - 86400000).toISOString().split('T')[0];
+    var dateTo = new Date(now.getTime() + 86400000).toISOString().split('T')[0];
+    var smUrl = 'https://api.sportmonks.com/v3/football/fixtures/between/' + dateFrom + '/' + dateTo + '?api_token=' + process.env.SPORTMONKS_API_KEY + '&include=scores';
+    var smRes = await fetch(smUrl, { signal: AbortSignal.timeout(8000) });
+    if (!smRes.ok) return false;
+    var smData = await smRes.json();
+    if (!smData.data || smData.data.length === 0) return false;
+    var fixture = smData.data.find(function(f) {
+      var fHome = (f.home_team && f.home_team.name) || '';
+      var fAway = (f.away_team && f.away_team.name) || '';
+      return normalizeTeamName(fHome) === normalizeTeamName(home) && normalizeTeamName(fAway) === normalizeTeamName(away) && f.status && f.status.name === 'Finished';
+    });
+    if (!fixture || !fixture.scores || !fixture.scores.fulltime) return false;
+    var hg = fixture.scores.fulltime.home;
+    var ag = fixture.scores.fulltime.away;
+    if (hg === null || ag === null) return false;
+    applyResultToTip(tip, home, away, hg, ag, now);
+    return true;
+  } catch (e) { return false; }
+}
+
 async function checkResults() {
   const now = new Date();
   const pending = trackedTips.filter(function(t) { return t.result === 'pending' && t.kickoff && new Date(t.kickoff) < new Date(now.getTime() - 2 * 60 * 60 * 1000); });
   if (pending.length === 0) return;
   loadElo(); loadForm(); loadWeights(); loadCalibration(); loadTeamStats(); loadH2H(); loadMatchDates(); loadFeatureLogs();
+  var checked = 0;
   for (var i = 0; i < pending.length; i++) {
     var tip = pending[i];
     try {
       var home, away; var parts = tip.match.split(' vs '); home = parts[0]; away = parts[1];
+      // Soccer: football-data.org API
       if (tip.type === 'soccer_fifa_world_cup' || tip.type === 'soccer_epl') {
         var tipKickoff = new Date(tip.kickoff);
         var dateFrom = new Date(tipKickoff.getTime() - 86400000).toISOString().split('T')[0];
@@ -1306,47 +1452,41 @@ async function checkResults() {
         var match = data.matches.find(function(m) { return normalizeTeamName(m.homeTeam ? m.homeTeam.name : '') === normalizeTeamName(home) && normalizeTeamName(m.awayTeam ? m.awayTeam.name : '') === normalizeTeamName(away) && m.status === 'FINISHED' && m.score && m.score.fullTime && m.score.fullTime.home !== null && m.score.fullTime.away !== null; });
         if (!match) continue;
         var hg = match.score.fullTime.home, ag = match.score.fullTime.away;
-        var won = determineWin(tip, home, away, hg, ag);
-        tip.result = won ? 'won' : 'lost'; tip.checkedAt = now.toISOString();
-        var scoreA = hg > ag ? 1 : (hg === ag ? 0.5 : 0);
-        const cfg = getCfg(tip.type);
-        updateElo(tip.type, home, away, scoreA, cfg.kFactor);
-        updateForm(tip.type, home, away, scoreA);
-        updateWeights(tip.type, won);
-        recordCalibration(tip.conf, won);
-        updateTeamStats(tip.type, home, away, hg, ag);
-        updateH2H(tip.type, home, away, hg, ag);
-        updateMatchDate(home, tip.kickoff);
-        updateMatchDate(away, tip.kickoff);
-        logFeature(tip.type, tip.features, won);
-        trainSportModel(tip.type); // immediate retrain
-      } else {
-        var res = await fetch(ODDS_API_BASE + '/sports/' + tip.type + '/scores?apiKey=' + ODDS_API_KEY + '&daysFrom=2');
-        if (!res.ok) continue; var scores = await res.json(); if (!scores || scores.length === 0) continue;
-        var match = scores.find(function(s) { return normalizeTeamName(s.home_team) === normalizeTeamName(home) && normalizeTeamName(s.away_team) === normalizeTeamName(away) && s.completed === true && s.scores; });
-        if (!match || !match.scores) continue;
-        var hScore = parseInt(match.scores[0] ? match.scores[0].score : (match.scores.home || 0), 10);
-        var aScore = parseInt(match.scores[1] ? match.scores[1].score : (match.scores.away || 0), 10);
-        var won = determineWin(tip, home, away, hScore, aScore);
-        tip.result = won ? 'won' : 'lost'; tip.checkedAt = now.toISOString();
-        const cfg = getCfg(tip.type);
-        updateElo(tip.type, home, away, hScore > aScore ? 1 : (hScore === aScore ? 0.5 : 0), cfg.kFactor);
-        updateForm(tip.type, home, away, hScore > aScore ? 1 : (hScore === aScore ? 0.5 : 0));
-        updateWeights(tip.type, won);
-        recordCalibration(tip.conf, won);
-        updateTeamStats(tip.type, home, away, hScore, aScore);
-        updateH2H(tip.type, home, away, hScore, aScore);
-        updateMatchDate(home, tip.kickoff);
-        updateMatchDate(away, tip.kickoff);
-        logFeature(tip.type, tip.features, won);
-        trainSportModel(tip.type); // immediate retrain
+        applyResultToTip(tip, home, away, hg, ag, now);
+        checked++;
+        continue;
       }
-    } catch (e) {}
+      // Cricket: SportMonks API
+      if (tip.type === 'cricket_international_t20') {
+        var found = await checkCricketResult(tip, home, away, now);
+        if (found) { checked++; continue; }
+      }
+      // Try the-odds-api first (works for MLB, NRL, AFL, etc.)
+      var res = await fetch(ODDS_API_BASE + '/sports/' + tip.type + '/scores?apiKey=' + ODDS_API_KEY + '&daysFrom=2');
+      if (res.ok) {
+        var scores = await res.json();
+        if (scores && scores.length > 0) {
+          var match = scores.find(function(s) { return normalizeTeamName(s.home_team) === normalizeTeamName(home) && normalizeTeamName(s.away_team) === normalizeTeamName(away) && s.completed === true && s.scores; });
+          if (match && match.scores) {
+            var hScore = parseInt(match.scores[0] ? match.scores[0].score : (match.scores.home || 0), 10);
+            var aScore = parseInt(match.scores[1] ? match.scores[1].score : (match.scores.away || 0), 10);
+            applyResultToTip(tip, home, away, hScore, aScore, now);
+            checked++;
+            continue;
+          }
+        }
+      }
+      // Fallback: SportMonks football scores
+      if (tip.type.startsWith('soccer_')) {
+        var found = await checkSportMonksResult(tip, home, away, now);
+        if (found) { checked++; continue; }
+      }
+    } catch (e) { console.log('[RESULTS] Error checking ' + tip.match + ': ' + (e.message || e).slice(0, 100)); }
   }
   saveTrackedTips();
   checkSportHealth();
-  // Retrain models periodically
-  if (Math.random() < 0.1) { // 10% chance each check
+  console.log('[RESULTS] Checked ' + checked + '/' + pending.length + ' pending tips');
+  if (Math.random() < 0.1) {
     loadFeatureLogs();
     for (var si = 0; si < SPORTS.length; si++) trainSportModel(SPORTS[si].key);
   }
@@ -1424,7 +1564,10 @@ async function refreshTips() {
         }
       }
     } else if (hasOdds) {
-      for (var oi = 0; oi < cachedOdds[sport.key].length; oi++) { var tip = buildNonSoccerTip(cachedOdds[sport.key][oi], sport); if (tip) allTips.push(tip); }
+      for (var oi = 0; oi < cachedOdds[sport.key].length; oi++) {
+        var tip = sport.key === 'baseball_mlb' ? buildBaseballTip(cachedOdds[sport.key][oi], sport) : buildNonSoccerTip(cachedOdds[sport.key][oi], sport);
+        if (tip) allTips.push(tip);
+      }
     }
     // Darts: use scraped fixtures with our own AI
     if (sport.key === 'darts_pdc' && cachedDartsFixtures.length > 0) {
@@ -2870,7 +3013,26 @@ app.get('/api/weights', function(req, res) {
 app.get('/api/history', rateLimit(60000, 15), function(req, res) {
   loadTrackedTips();
   var completed = trackedTips.filter(function(t) { return t.result === 'won' || t.result === 'lost'; }).sort(function(a, b) { return (b.kickoff || '').localeCompare(a.kickoff || ''); });
-  res.json({ count: completed.length, tips: completed.slice(0, 100) });
+  var bySport = {};
+  for (var i = 0; i < completed.length; i++) {
+    var t = completed[i];
+    if (!bySport[t.sport]) bySport[t.sport] = { sport: t.sport, won: 0, lost: 0 };
+    bySport[t.sport][t.result]++;
+  }
+  res.json({ count: completed.length, tips: completed.slice(0, 100), bySport: Object.values(bySport) });
+});
+
+app.post('/api/check-results', rateLimit(60000, 5), async function(req, res) {
+  try {
+    await checkResults();
+    loadTrackedTips();
+    var pending = trackedTips.filter(function(t) { return t.result === 'pending'; }).length;
+    var won = trackedTips.filter(function(t) { return t.result === 'won'; }).length;
+    var lost = trackedTips.filter(function(t) { return t.result === 'lost'; }).length;
+    res.json({ ok: true, pending: pending, won: won, lost: lost, winRate: won + lost > 0 ? (won / (won + lost) * 100).toFixed(1) : '0.0' });
+  } catch (e) {
+    res.json({ ok: false, error: e.message });
+  }
 });
 
 app.get('/api/tiers', function(req, res) {

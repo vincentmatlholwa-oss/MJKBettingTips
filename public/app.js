@@ -1190,6 +1190,18 @@ setInterval(function() {
   var current = todayKey();
   if (current !== lastDate) { lastDate = current; setTodayLabel(); }
   fetchTips();
+  // Auto-refresh results every 5 minutes
+  fetchHistory();
+  // Trigger server-side result checking every 10 minutes
+  if (Math.random() < 0.17) {
+    apiPost('/api/check-results').then(function(d) {
+      if (d && d.ok) {
+        console.log('[RESULTS] Server checked: W=' + d.won + ' L=' + d.lost + ' Pending=' + d.pending);
+        fetchHistory();
+        fetchStats();
+      }
+    }).catch(function() {});
+  }
 }, 60000);
 
 // Close dropdowns on outside click
