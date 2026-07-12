@@ -92,6 +92,88 @@ const APIFOOTBALL_KEY = process.env.APIFOOTBALL_KEY || '';
 const APIFOOTBALL_BASE = 'https://v3.football.api-sports.io';
 let apiFootballPredictions = {};  // { 'HomeTeam|AwayTeam': { home, draw, away, winner, advice } }
 
+// === GITHUB AUTO-BACKUP: Hourly backup of all data files ===
+const GITHUB_TOKEN = process.env.GITHUB_BACKUP_TOKEN || '';
+const GITHUB_REPO = 'vincentmatlholwa-oss/MJKBettingTips';
+const GITHUB_BRANCH = 'master';
+const DATA_BACKUP_FILES = [
+  'tracked_results.json', 'elo_ratings.json', 'calibration.json', 'form_tracker.json',
+  'adaptive_weights.json', 'team_stats.json', 'head_to_head.json', 'model_coeffs.json',
+  'feature_log.json', 'sport_health.json', 'cached_odds.json', 'match_dates.json',
+  'standings_cache.json', 'sportmonks_fixtures.json', 'darts_fixtures.json',
+  'racing_events.json', 'sport_prefs.json', 'users.json'
+];
+
+async function githubGetFile(filePath) {
+  if (!GITHUB_TOKEN) return null;
+  try {
+    var res = await fetch('https://api.github.com/repos/' + GITHUB_REPO + '/contents/data/' + filePath + '?ref=' + GITHUB_BRANCH, {
+      headers: { 'Authorization': 'token ' + GITHUB_TOKEN, 'Accept': 'application/vnd.github.v3+json' }
+    });
+    if (!res.ok) return null;
+    var data = await res.json();
+    return { sha: data.sha, content: Buffer.from(data.content, 'base64').toString('utf8') };
+  } catch (e) { return null; }
+}
+
+async function githubPushFile(filePath, content, sha) {
+  if (!GITHUB_TOKEN) return false;
+  try {
+    var body = { message: 'Auto-backup: ' + filePath + ' (' + new Date().toISOString() + ')', content: Buffer.from(content).toString('base64'), branch: GITHUB_BRANCH };
+    if (sha) body.sha = sha;
+    var res = await fetch('https://api.github.com/repos/' + GITHUB_REPO + '/contents/data/' + filePath, {
+      method: 'PUT',
+      headers: { 'Authorization': 'token ' + GITHUB_TOKEN, 'Content-Type': 'application/json', 'Accept': 'application/vnd.github.v3+json' },
+      body: JSON.stringify(body)
+    });
+    return res.ok;
+  } catch (e) { return false; }
+}
+
+async function backupDataToGitHub() {
+  if (!GITHUB_TOKEN) { console.log('[BACKUP] No GitHub token — skipping'); return; }
+  var backed = 0, skipped = 0;
+  for (var fi = 0; fi < DATA_BACKUP_FILES.length; fi++) {
+    var file = DATA_BACKUP_FILES[fi];
+    var localPath = path.join(DATA_DIR, file);
+    try {
+      if (!fs.existsSync(localPath)) { skipped++; continue; }
+      var localContent = fs.readFileSync(localPath, 'utf8');
+      if (!localContent || localContent.length < 3) { skipped++; continue; }
+      var existing = await githubGetFile(file);
+      // Skip if content hasn't changed
+      if (existing && existing.content === localContent) { skipped++; continue; }
+      var sha = existing ? existing.sha : null;
+      var ok = await githubPushFile(file, localContent, sha);
+      if (ok) { backed++; }
+    } catch (e) { console.log('[BACKUP] Error backing up ' + file + ': ' + (e.message || e).slice(0, 100)); }
+  }
+  console.log('[BACKUP] GitHub: ' + backed + ' files backed up, ' + skipped + ' unchanged');
+}
+
+async function restoreDataFromGitHub() {
+  if (!GITHUB_TOKEN) return;
+  var restored = 0;
+  for (var fi = 0; fi < DATA_BACKUP_FILES.length; fi++) {
+    var file = DATA_BACKUP_FILES[fi];
+    var localPath = path.join(DATA_DIR, file);
+    try {
+      // Only restore if local file is missing or empty
+      if (fs.existsSync(localPath)) {
+        var local = fs.readFileSync(localPath, 'utf8');
+        if (local && local.length > 5) continue;
+      }
+      var remote = await githubGetFile(file);
+      if (remote && remote.content && remote.content.length > 5) {
+        fs.writeFileSync(localPath, remote.content, 'utf8');
+        restored++;
+        console.log('[RESTORE] Restored ' + file + ' from GitHub');
+      }
+    } catch (e) {}
+  }
+  if (restored > 0) console.log('[RESTORE] Restored ' + restored + ' data files from GitHub');
+}
+
 const SPORTS = [
   { key: 'soccer_fifa_world_cup', name: 'FIFA World Cup', icon: '\u26BD' },
   { key: 'soccer_epl', name: 'EPL', icon: '\u26BD' },
@@ -3414,6 +3496,21 @@ app.post('/api/check-results', rateLimit(60000, 5), async function(req, res) {
   }
 });
 
+// Manual backup trigger
+app.post('/api/backup', rateLimit(300000, 2), async function(req, res) {
+  try {
+    await backupDataToGitHub();
+    res.json({ ok: true, message: 'Backup completed' });
+  } catch (e) {
+    res.json({ ok: false, error: e.message });
+  }
+});
+
+// Backup status
+app.get('/api/backup-status', function(req, res) {
+  res.json({ configured: !!GITHUB_TOKEN, repo: GITHUB_REPO, files: DATA_BACKUP_FILES.length });
+});
+
 // BSD AI predictions status
 app.get('/api/bsd-status', function(req, res) {
   var keys = Object.keys(bsdPredictions);
@@ -3851,9 +3948,11 @@ app.use(function(err, req, res, next) {
 });
 
 loadTrackedTips(); loadElo(); loadForm(); loadWeights(); loadCalibration(); loadTeamStats(); loadH2H(); loadMatchDates(); loadModelCoeffs(); loadFeatureLogs(); loadSportHealth(); loadCachedOdds(); loadRacingEvents();
+restoreDataFromGitHub();
 refreshTips();
 setInterval(refreshTips, 300000);
 setInterval(checkResults, 300000);
+setInterval(backupDataToGitHub, 3600000); // Backup to GitHub every hour
 setInterval(function() { cleanResearchCache(); cleanRevokedTokens(); }, 3600000);
 setInterval(function() { loadTrackedTips(); loadFeatureLogs(); for (var si = 0; si < SPORTS.length; si++) trainSportModel(SPORTS[si].key); checkSportHealth(); }, 1800000);
 

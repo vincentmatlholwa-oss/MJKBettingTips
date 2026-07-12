@@ -31,6 +31,8 @@ services:
         sync: false
       - key: WHATSAPP_TOKEN
         sync: false
+      - key: GITHUB_BACKUP_TOKEN
+        sync: false
     disk:
       name: mjkbetting-data
       mountPath: /var/data
