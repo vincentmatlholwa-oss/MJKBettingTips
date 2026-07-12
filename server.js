@@ -1637,6 +1637,21 @@ async function refreshTips() {
     }
     // Non-soccer without odds: skip (no reliable data source)
   }
+  // BSD STANDALONE: When no soccer odds available, generate tips directly from BSD predictions
+  var hasSoccerOdds = SPORTS.some(function(s) { return s.key.startsWith('soccer_') && cachedOdds[s.key] && cachedOdds[s.key].length > 0; });
+  if (!hasSoccerOdds && Object.keys(bsdPredictions).length > 0) {
+    var bsdKeys = Object.keys(bsdPredictions);
+    var bsdTips = [];
+    for (var bi = 0; bi < bsdKeys.length; bi++) {
+      var bsdTip = buildBSDStandaloneTip(bsdKeys[bi]);
+      if (bsdTip) bsdTips.push(bsdTip);
+    }
+    // Sort by confidence, take top 20 BSD standalone tips
+    bsdTips.sort(function(a, b) { return b.conf - a.conf; });
+    var bsdPick = bsdTips.slice(0, 20);
+    allTips = allTips.concat(bsdPick);
+    console.log('[BSD] Generated ' + bsdPick.length + ' standalone tips from ' + bsdKeys.length + ' predictions');
+  }
   // SportMonks: generate tips from SportMonks fixtures (supplements other sources)
   if (cachedSportMonksFixtures.length > 0) {
     for (var smi = 0; smi < cachedSportMonksFixtures.length; smi++) {
@@ -2447,6 +2462,71 @@ function getAPIFootballPrediction(homeTeam, awayTeam) {
     if (parts.length === 2 && hLower.indexOf(parts[0]) !== -1 && aLower.indexOf(parts[1]) !== -1) return apiFootballPredictions[keys[i]];
   }
   return null;
+}
+
+// === STANDALONE TIP BUILDER: Generate tips directly from BSD predictions when no odds available ===
+function buildBSDStandaloneTip(bsdKey) {
+  var bsd = bsdPredictions[bsdKey];
+  if (!bsd || !bsd.kickoff) return null;
+  var parts = bsdKey.split('|');
+  if (parts.length !== 2) return null;
+  var home = parts[0].trim();
+  var away = parts[1].trim();
+  // Skip if kickoff is in the past
+  var kickoffTime = new Date(bsd.kickoff).getTime();
+  if (!kickoffTime || kickoffTime <= Date.now()) return null;
+  // Determine pick from probabilities
+  var pick, prob, price;
+  if (bsd.predictedResult === 'H' || bsd.home > bsd.away && bsd.home > bsd.draw) {
+    pick = home + ' to Win'; prob = bsd.home;
+    price = prob > 0.6 ? (1 + 1 / prob).toFixed(2) : prob > 0.45 ? (1 + 1 / prob * 0.95).toFixed(2) : (1 + 1 / prob * 0.9).toFixed(2);
+  } else if (bsd.predictedResult === 'A' || bsd.away > bsd.home && bsd.away > bsd.draw) {
+    pick = away + ' to Win'; prob = bsd.away;
+    price = prob > 0.6 ? (1 + 1 / prob).toFixed(2) : prob > 0.45 ? (1 + 1 / prob * 0.95).toFixed(2) : (1 + 1 / prob * 0.9).toFixed(2);
+  } else {
+    pick = 'Draw'; prob = bsd.draw;
+    price = prob > 0.3 ? (1 + 1 / prob * 0.9).toFixed(2) : '3.50';
+  }
+  if (prob < 0.28) return null;
+  // Map league to sport key
+  var leagueLower = (bsd.league || '').toLowerCase();
+  var sportKey = 'soccer_epl';
+  if (leagueLower.indexOf('la liga') !== -1 || leagueLower.indexOf('spain') !== -1) sportKey = 'soccer_spain_la_liga';
+  else if (leagueLower.indexOf('bundesliga') !== -1 || leagueLower.indexOf('germany') !== -1) sportKey = 'soccer_germany_bundesliga';
+  else if (leagueLower.indexOf('serie a') !== -1 || leagueLower.indexOf('italy') !== -1) sportKey = 'soccer_italy_serie_a';
+  else if (leagueLower.indexOf('ligue 1') !== -1 || leagueLower.indexOf('france') !== -1) sportKey = 'soccer_france_ligue_one';
+  else if (leagueLower.indexOf('eredivisie') !== -1 || leagueLower.indexOf('netherlands') !== -1) sportKey = 'soccer_netherlands_eredivisie';
+  else if (leagueLower.indexOf('primeira') !== -1 || leagueLower.indexOf('portugal') !== -1) sportKey = 'soccer_portugal_liga';
+  else if (leagueLower.indexOf('brasileir') !== -1 || leagueLower.indexOf('brazil') !== -1) sportKey = 'soccer_brazil_serie_a';
+  else if (leagueLower.indexOf('mls') !== -1 || leagueLower.indexOf('usa') !== -1 || leagueLower.indexOf('united states') !== -1) sportKey = 'soccer_usa_mls';
+  else if (leagueLower.indexOf('champions') !== -1) sportKey = 'soccer_uefa_champs_league';
+  else if (leagueLower.indexOf('europa') !== -1) sportKey = 'soccer_uefa_europa_league';
+  // Use API-Football prediction if available for cross-check
+  var afPred = getAPIFootballPrediction(home, away);
+  var conf = Math.round(prob * 100);
+  // Ensemble: if AF agrees, boost
+  if (afPred && afPred.winnerPick) {
+    var afPick = afPred.winnerPick === 'H' ? 'H' : afPred.winnerPick === 'A' ? 'A' : 'D';
+    var ourPick = prob === bsd.home ? 'H' : prob === bsd.away ? 'A' : 'D';
+    if (afPick === ourPick) conf = Math.min(96, conf + 8);
+  }
+  // Cap confidence
+  conf = Math.max(65, Math.min(96, conf));
+  var reason = 'BSD CatBoost [' + (bsd.league || 'Football') + '] | xG ' + (bsd.xgHome || 0).toFixed(1) + '-' + (bsd.xgAway || 0).toFixed(1) + ' | Model ' + (bsd.modelVersion || 'v5');
+  return {
+    type: sportKey, sport: 'Football', icon: '⚽',
+    match: home + ' vs ' + away,
+    league: bsd.league || 'Football',
+    country: '',
+    marketType: 'h2h', market: 'Match Result', marketLine: null,
+    kickoff: bsd.kickoff,
+    pick: pick, odds: price, conf: conf,
+    bookmaker: 'BSD AI',
+    valueBet: false,
+    reason: reason,
+    bsdAgree: true,
+    tripleAgree: !!afPred && (afPred.winnerPick === (prob === bsd.home ? 'H' : prob === bsd.away ? 'A' : 'D'))
+  };
 }
 
 function buildSportMonksTip(fixture) {
