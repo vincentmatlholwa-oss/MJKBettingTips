@@ -85,6 +85,9 @@ const TAB_NEWS_URL = 'https://news.tab.co.za';
 const DARTS_API_KEY = process.env.DARTS_SPORTDEVS_API_KEY || '';
 const SPORTMONKS_API_KEY = process.env.SPORTMONKS_API_KEY || '';
 const SPORTMONKS_API_BASE = 'https://api.sportmonks.com/v3/football';
+const BSD_API_KEY = process.env.BSD_API_KEY || '';
+const BSD_API_BASE = 'https://sports.bzzoiro.com/api';
+let bsdPredictions = {};  // { 'HomeTeam|AwayTeam': { home, draw, away, confidence, xg_home, xg_away, score } }
 
 const SPORTS = [
   { key: 'soccer_fifa_world_cup', name: 'FIFA World Cup', icon: '\u26BD' },
@@ -1131,13 +1134,35 @@ async function buildSoccerTip(oddsMatch, sport) {
 
   // Enhanced blending with real data
   const h2hData = getH2H(sport.key, home, away);
+  // BSD CatBoost ML prediction
+  const bsdPred = getBSDPrediction(home, away);
   let pred;
   if (mlHomeProb !== null) {
     const mlAwayProb = 1 - mlHomeProb;
-    const blendLR = 0.35;
-    pred = { homeWin: mlHomeProb * blendLR + poisson.homeWin * w.poissonWeight + eloHome * w.eloWeight + effectiveMarket.homeWin * w.marketWeight * (1 - blendLR), awayWin: mlAwayProb * blendLR + poisson.awayWin * w.poissonWeight + eloAway * w.eloWeight + effectiveMarket.awayWin * w.marketWeight * (1 - blendLR), draw: cfg.hasDraw ? (poisson.draw * w.poissonWeight + eloDrawVal * w.eloWeight + effectiveMarket.draw * w.marketWeight * (1 - blendLR)) : 0, mlUsed: true };
+    var bsdHW = bsdPred ? bsdPred.home : null;
+    var bsdAW = bsdPred ? bsdPred.away : null;
+    var bsdDW = bsdPred ? bsdPred.draw : null;
+    var bsdBlend = bsdPred ? 0.15 : 0;
+    var baseHW = mlHomeProb * 0.35 + poisson.homeWin * w.poissonWeight + eloHome * w.eloWeight + effectiveMarket.homeWin * w.marketWeight * 0.50;
+    var baseAW = mlAwayProb * 0.35 + poisson.awayWin * w.poissonWeight + eloAway * w.eloWeight + effectiveMarket.awayWin * w.marketWeight * 0.50;
+    var baseDW = cfg.hasDraw ? (poisson.draw * w.poissonWeight + eloDrawVal * w.eloWeight + effectiveMarket.draw * w.marketWeight * 0.50) : 0;
+    if (bsdPred) {
+      baseHW = baseHW * (1 - bsdBlend) + bsdHW * bsdBlend;
+      baseAW = baseAW * (1 - bsdBlend) + bsdAW * bsdBlend;
+      baseDW = baseDW * (1 - bsdBlend) + (bsdDW || 0) * bsdBlend;
+    }
+    pred = { homeWin: baseHW, awayWin: baseAW, draw: baseDW, mlUsed: true, bsdUsed: !!bsdPred };
   } else {
-    pred = { homeWin: poisson.homeWin * w.poissonWeight + eloHome * w.eloWeight + effectiveMarket.homeWin * w.marketWeight, awayWin: poisson.awayWin * w.poissonWeight + eloAway * w.eloWeight + effectiveMarket.awayWin * w.marketWeight, draw: cfg.hasDraw ? (poisson.draw * w.poissonWeight + eloDrawVal * w.eloWeight + effectiveMarket.draw * w.marketWeight) : 0, mlUsed: false };
+    var baseHW2 = poisson.homeWin * w.poissonWeight + eloHome * w.eloWeight + effectiveMarket.homeWin * w.marketWeight;
+    var baseAW2 = poisson.awayWin * w.poissonWeight + eloAway * w.eloWeight + effectiveMarket.awayWin * w.marketWeight;
+    var baseDW2 = cfg.hasDraw ? (poisson.draw * w.poissonWeight + eloDrawVal * w.eloWeight + effectiveMarket.draw * w.marketWeight) : 0;
+    if (bsdPred) {
+      var b2 = 0.20;
+      baseHW2 = baseHW2 * (1 - b2) + bsdPred.home * b2;
+      baseAW2 = baseAW2 * (1 - b2) + bsdPred.away * b2;
+      baseDW2 = baseDW2 * (1 - b2) + (bsdPred.draw || 0) * b2;
+    }
+    pred = { homeWin: baseHW2, awayWin: baseAW2, draw: baseDW2, mlUsed: false, bsdUsed: !!bsdPred };
   }
 
   // Apply real H2H adjustment (15% weight on real H2H if available)
@@ -1159,11 +1184,15 @@ async function buildSoccerTip(oddsMatch, sport) {
   let rc = [];
   if (hStats.source === 'standings') rc.push('REAL');
   if (pred.mlUsed) rc.push('ML');
+  if (pred.bsdUsed) rc.push('BSD');
   if (cfg.usePoisson) rc.push('Pois+' + poisson.expectedHomeGoals.toFixed(1) + '-' + poisson.expectedAwayGoals.toFixed(1));
   rc.push('Elo ' + Math.round(adjustedElo) + 'v' + Math.round(adjustedEloA));
   if (consensus) rc.push(consensus.totalBooks + 'bk');
   if (h2hData && h2hData.total >= 1) rc.push('H2H' + h2hData.total);
   if (hForm && aForm) rc.push('F' + hForm.wins + 'W-' + hForm.losses + 'L/' + aForm.wins + 'W-' + aForm.losses + 'L');
+  // Ensemble voting with BSD
+  var ensembleResult = ensembleVote(pred.homeWin, pred.awayWin, pred.draw || 0, bsdPred);
+  if (bsdPred && !ensembleResult.agree) rc.push('BSD-DISAGREE');
 
   // === Evaluate all markets ===
   var candidates = [];
@@ -1215,8 +1244,14 @@ async function buildSoccerTip(oddsMatch, sport) {
   candidates.sort(function(a, b) { return b.score - a.score; });
   if (candidates.length === 0 || candidates[0].score < 3) return null;
   var best = candidates[0];
+  var finalConf = Math.min(cfg.maxConf, Math.max(cfg.minConf, best.conf));
+  // Ensemble boost: if BSD agrees, boost confidence; if disagrees, reduce
+  if (bsdPred) {
+    if (ensembleResult.agree) finalConf = Math.min(cfg.maxConf, finalConf + ensembleResult.boostConfidence);
+    else finalConf = Math.max(cfg.minConf, finalConf - 5);
+  }
   var reason = 'AI [' + best.market + '] ' + rc.join(' | ');
-  return { type: sport.key, sport: sport.name, icon: sport.icon, match: home + ' vs ' + away, league: sport.name, country: COUNTRY_MAP[sport.key] || '', marketType: best.marketType, market: best.market, marketLine: best.line, kickoff: oddsMatch.commence_time, pick: best.pick, odds: best.odds, conf: Math.min(cfg.maxConf, Math.max(cfg.minConf, best.conf)), realOdds: consensus ? { home: consensus.bestHomePrice || null, away: consensus.bestAwayPrice || null, draw: consensus.bestDrawPrice || null } : null, bookmaker: best.bookmaker, valueBet: best.valueBet, reason: reason, features: features };
+  return { type: sport.key, sport: sport.name, icon: sport.icon, match: home + ' vs ' + away, league: sport.name, country: COUNTRY_MAP[sport.key] || '', marketType: best.marketType, market: best.market, marketLine: best.line, kickoff: oddsMatch.commence_time, pick: best.pick, odds: best.odds, conf: finalConf, realOdds: consensus ? { home: consensus.bestHomePrice || null, away: consensus.bestAwayPrice || null, draw: consensus.bestDrawPrice || null } : null, bookmaker: best.bookmaker, valueBet: best.valueBet, reason: reason, features: features, bsdAgree: bsdPred ? ensembleResult.agree : null };
 }
 
 // === DEDICATED BASEBALL PREDICTION ENGINE ===
@@ -1309,19 +1344,25 @@ function buildNonSoccerTip(oddsMatch, sport) {
   const totalW = w.eloWeight + w.marketWeight;
   const eW = w.eloWeight / totalW, mW = w.marketWeight / totalW;
 
+  // BSD CatBoost ML prediction
+  const bsdPred = getBSDPrediction(home, away);
+
   // ML model override
   const features = buildFeatures(home, away, sport.key);
   const rawLR = predictLR(sport.key, features);
   let blendHome, blendAway, blendDraw;
   if (rawLR !== null) {
     const mlHome = rawLR, mlAway = 1 - rawLR;
-    blendHome = mlHome * 0.30 + (eloHome * eW + consensus.homeWin * mW + Math.max(0, ratingDiff) * 0.1) * 0.70;
-    blendAway = mlAway * 0.30 + (eloAway * eW + consensus.awayWin * mW + Math.max(0, -ratingDiff) * 0.1) * 0.70;
-    blendDraw = cfg.hasDraw ? (eloDrawVal * eW + consensus.draw * mW) * 0.70 : 0;
+    var bsdH = bsdPred ? bsdPred.home : 0, bsdA = bsdPred ? bsdPred.away : 0, bsdD = bsdPred ? bsdPred.draw : 0;
+    var bW = bsdPred ? 0.15 : 0;
+    blendHome = mlHome * 0.30 + (eloHome * eW + consensus.homeWin * mW + Math.max(0, ratingDiff) * 0.1) * 0.55 + bsdH * bW;
+    blendAway = mlAway * 0.30 + (eloAway * eW + consensus.awayWin * mW + Math.max(0, -ratingDiff) * 0.1) * 0.55 + bsdA * bW;
+    blendDraw = cfg.hasDraw ? (eloDrawVal * eW + consensus.draw * mW) * 0.55 + bsdD * bW : 0;
   } else {
-    blendHome = eloHome * eW + consensus.homeWin * mW + Math.max(0, ratingDiff) * 0.1;
-    blendAway = eloAway * eW + consensus.awayWin * mW + Math.max(0, -ratingDiff) * 0.1;
-    blendDraw = cfg.hasDraw ? (eloDrawVal * eW + consensus.draw * mW) : 0;
+    var bW2 = bsdPred ? 0.20 : 0;
+    blendHome = eloHome * eW + consensus.homeWin * mW + Math.max(0, ratingDiff) * 0.1 + (bsdPred ? bsdPred.home : 0) * bW2;
+    blendAway = eloAway * eW + consensus.awayWin * mW + Math.max(0, -ratingDiff) * 0.1 + (bsdPred ? bsdPred.away : 0) * bW2;
+    blendDraw = cfg.hasDraw ? (eloDrawVal * eW + consensus.draw * mW + (bsdPred ? bsdPred.draw : 0) * bW2) : 0;
   }
   const totalB = blendHome + blendAway + blendDraw;
   const nHome = totalB > 0 ? blendHome / totalB : 0.5, nAway = totalB > 0 ? blendAway / totalB : 0.5, nDraw = totalB > 0 ? blendDraw / totalB : 0;
@@ -1335,8 +1376,16 @@ function buildNonSoccerTip(oddsMatch, sport) {
   const h2h = getH2H(sport.key, home, away);
   const h2hNote = h2h ? ' H2H ' + h2h.total : '';
   var dataSrc = (hStats.source === 'standings') ? ' REAL' : '';
-  reason = 'AI' + dataSrc + (rawLR !== null ? ' ML' : '') + ' Elo ' + Math.round(adjustedElo) + 'v' + Math.round(adjustedEloA) + formNote + h2hNote + ' ' + consensus.totalBooks + 'books';
-  return { type: sport.key, sport: sport.name, icon: sport.icon, match: home + ' vs ' + away, league: sport.name, country: COUNTRY_MAP[sport.key] || '', marketType: 'h2h', market: cfg.hasDraw ? 'Match Result' : 'Match Winner', marketLine: null, kickoff: oddsMatch.commence_time, pick: tipText, odds: odds, conf: Math.min(cfg.maxConf, Math.max(cfg.minConf, confidence)), realOdds: { home: consensus.bestHomePrice || null, away: consensus.bestAwayPrice || null, draw: cfg.hasDraw ? (consensus.bestDrawPrice || null) : null }, bookmaker: bookmaker, valueBet: valueBet, reason: reason, features: features };
+  // Ensemble voting with BSD
+  var nHomeNorm = nHome, nAwayNorm = nAway;
+  var ensembleResult = ensembleVote(nHomeNorm, nAwayNorm, nDraw, bsdPred);
+  var finalConf2 = Math.min(cfg.maxConf, Math.max(cfg.minConf, confidence));
+  if (bsdPred) {
+    if (ensembleResult.agree) finalConf2 = Math.min(cfg.maxConf, finalConf2 + ensembleResult.boostConfidence);
+    else finalConf2 = Math.max(cfg.minConf, finalConf2 - 5);
+  }
+  reason = 'AI' + dataSrc + (rawLR !== null ? ' ML' : '') + (bsdPred ? ' BSD' : '') + ' Elo ' + Math.round(adjustedElo) + 'v' + Math.round(adjustedEloA) + formNote + h2hNote + ' ' + consensus.totalBooks + 'books';
+  return { type: sport.key, sport: sport.name, icon: sport.icon, match: home + ' vs ' + away, league: sport.name, country: COUNTRY_MAP[sport.key] || '', marketType: 'h2h', market: cfg.hasDraw ? 'Match Result' : 'Match Winner', marketLine: null, kickoff: oddsMatch.commence_time, pick: tipText, odds: odds, conf: finalConf2, realOdds: { home: consensus.bestHomePrice || null, away: consensus.bestAwayPrice || null, draw: cfg.hasDraw ? (consensus.bestDrawPrice || null) : null }, bookmaker: bookmaker, valueBet: valueBet, reason: reason, features: features, bsdAgree: bsdPred ? ensembleResult.agree : null };
 }
 
 function determineWin(tip, home, away, hScore, aScore) {
@@ -1536,6 +1585,8 @@ async function refreshTips() {
   await fetchDartsFixtures();
   // Fetch SportMonks football fixtures
   await fetchSportMonksFixtures();
+  // Fetch BSD CatBoost ML predictions (free, unlimited)
+  await fetchBSDPredictions();
   var allTips = [];
   if (cachedRacingEvents && cachedRacingEvents.length > 0) {
     var racingTips = [];
@@ -2194,6 +2245,80 @@ async function fetchSportMonksFixtures() {
   }
 }
 
+// === BSD AI PREDICTIONS (CatBoost ML, free, unlimited) ===
+let bsdFetchDate = '';
+async function fetchBSDPredictions() {
+  var today = new Date().toISOString().slice(0, 10);
+  if (bsdFetchDate === today && Object.keys(bsdPredictions).length > 0) return;
+  if (!BSD_API_KEY) { console.log('[BSD] No API key configured'); return; }
+  try {
+    var allPreds = [];
+    var page = 1;
+    while (page <= 5) {
+      var url = BSD_API_BASE + '/predictions/?status=upcoming&sport=football&page_size=100&page=' + page;
+      var res = await safeFetch(url, { headers: { 'Authorization': 'Token ' + BSD_API_KEY } }, 15000);
+      if (!res.ok) { console.log('[BSD] HTTP ' + res.status); break; }
+      var data = await res.json();
+      if (!data.results || data.results.length === 0) break;
+      allPreds = allPreds.concat(data.results);
+      if (!data.next) break;
+      page++;
+    }
+    bsdPredictions = {};
+    for (var i = 0; i < allPreds.length; i++) {
+      var p = allPreds[i];
+      var ev = p.event;
+      if (!ev || !ev.home_team || !ev.away_team) continue;
+      var key = ev.home_team.toLowerCase().trim() + '|' + ev.away_team.toLowerCase().trim();
+      bsdPredictions[key] = {
+        home: (p.prob_home_win || 0) / 100,
+        draw: (p.prob_draw || 0) / 100,
+        away: (p.prob_away_win || 0) / 100,
+        confidence: (p.confidence || 0) / 100,
+        xgHome: p.expected_home_goals || 0,
+        xgAway: p.expected_away_goals || 0,
+        predictedResult: p.predicted_result || '',
+        mostLikelyScore: p.most_likely_score || '',
+        modelVersion: p.model_version || '',
+        league: ev.league ? ev.league.name : '',
+        kickoff: ev.event_date || ''
+      };
+    }
+    bsdFetchDate = today;
+    console.log('[BSD] Fetched ' + allPreds.length + ' predictions, cached ' + Object.keys(bsdPredictions).length);
+  } catch (e) {
+    console.log('[BSD] Error: ' + (e.message || e).slice(0, 200));
+    bsdFetchDate = today;
+  }
+}
+
+function getBSDPrediction(homeTeam, awayTeam) {
+  var key = homeTeam.toLowerCase().trim() + '|' + awayTeam.toLowerCase().trim();
+  if (bsdPredictions[key]) return bsdPredictions[key];
+  // Fuzzy match: try partial team name match
+  var hLower = homeTeam.toLowerCase().trim();
+  var aLower = awayTeam.toLowerCase().trim();
+  var keys = Object.keys(bsdPredictions);
+  for (var i = 0; i < keys.length; i++) {
+    var parts = keys[i].split('|');
+    if (parts.length === 2 && parts[0].indexOf(hLower) !== -1 && parts[1].indexOf(aLower) !== -1) return bsdPredictions[keys[i]];
+    if (parts.length === 2 && hLower.indexOf(parts[0]) !== -1 && aLower.indexOf(parts[1]) !== -1) return bsdPredictions[keys[i]];
+  }
+  return null;
+}
+
+// Ensemble voting: compare our model prediction with BSD's CatBoost ML
+// Returns { agree: boolean, boostConfidence: number, bsdPick: string, ourPick: string }
+function ensembleVote(ourHomeProb, ourAwayProb, ourDrawProb, bsdPred) {
+  if (!bsdPred) return { agree: true, boostConfidence: 0, bsdPick: '', ourPick: '' };
+  var ourPick = ourHomeProb >= ourAwayProb ? (ourHomeProb >= ourDrawProb ? 'H' : 'D') : (ourAwayProb >= ourDrawProb ? 'A' : 'D');
+  var bsdPick = bsdPred.predictedResult || (bsdPred.home >= bsdPred.away ? (bsdPred.home >= bsdPred.draw ? 'H' : 'D') : (bsdPred.away >= bsdPred.draw ? 'A' : 'D'));
+  var agree = ourPick === bsdPick;
+  var boostConfidence = 0;
+  if (agree && bsdPred.confidence > 0.6) boostConfidence = Math.round(bsdPred.confidence * 8);
+  return { agree: agree, boostConfidence: boostConfidence, bsdPick: bsdPick, ourPick: ourPick };
+}
+
 function buildSportMonksTip(fixture) {
   if (fixture.status === 'FT') return null;
   var sportKey = fixture.sportKey || 'soccer_epl';
@@ -2222,10 +2347,18 @@ function buildSportMonksTip(fixture) {
 
   var features = buildFeatures(home, away, sportKey);
   var rawLR = predictLR(sportKey, features);
+  // BSD CatBoost ML prediction
+  var bsdPred2 = getBSDPrediction(home, away);
   if (rawLR !== null) {
     var mlH = rawLR, mlA = 1 - rawLR;
-    predHW = predHW * 0.65 + mlH * 0.35;
-    predAW = predAW * 0.65 + mlA * 0.35;
+    var bW3 = bsdPred2 ? 0.15 : 0;
+    predHW = predHW * 0.50 + mlH * 0.35 + (bsdPred2 ? bsdPred2.home : 0) * bW3;
+    predAW = predAW * 0.50 + mlA * 0.35 + (bsdPred2 ? bsdPred2.away : 0) * bW3;
+    total = predHW + predAW + predD;
+    if (total > 0) { predHW /= total; predAW /= total; predD /= total; }
+  } else if (bsdPred2) {
+    predHW = predHW * 0.80 + bsdPred2.home * 0.20;
+    predAW = predAW * 0.80 + bsdPred2.away * 0.20;
     total = predHW + predAW + predD;
     if (total > 0) { predHW /= total; predAW /= total; predD /= total; }
   }
@@ -2243,11 +2376,18 @@ function buildSportMonksTip(fixture) {
     return null;
   }
   conf = Math.min(cfg.maxConf, Math.max(cfg.minConf, calibrateConfidence(conf)));
+  // Ensemble voting with BSD
+  var ensembleR2 = ensembleVote(predHW, predAW, predD, bsdPred2);
+  if (bsdPred2) {
+    if (ensembleR2.agree) conf = Math.min(cfg.maxConf, conf + ensembleR2.boostConfidence);
+    else conf = Math.max(cfg.minConf, conf - 5);
+  }
 
   var rc = [];
   if (hStats.source === 'standings') rc.push('REAL');
   rc.push('SM');
   if (rawLR !== null) rc.push('ML');
+  if (bsdPred2) rc.push('BSD');
   rc.push('Pois+' + poisson.expectedHomeGoals.toFixed(1) + '-' + poisson.expectedAwayGoals.toFixed(1));
   rc.push('Elo ' + Math.round(adjH) + 'v' + Math.round(adjA));
 
@@ -3033,6 +3173,13 @@ app.post('/api/check-results', rateLimit(60000, 5), async function(req, res) {
   } catch (e) {
     res.json({ ok: false, error: e.message });
   }
+});
+
+// BSD AI predictions status
+app.get('/api/bsd-status', function(req, res) {
+  var keys = Object.keys(bsdPredictions);
+  var sample = keys.length > 0 ? bsdPredictions[keys[0]] : null;
+  res.json({ configured: !!BSD_API_KEY, cached: keys.length, fetchDate: bsdFetchDate, sample: sample ? { match: keys[0], home: sample.home, away: sample.away, draw: sample.draw, confidence: sample.confidence, predictedResult: sample.predictedResult } : null });
 });
 
 app.get('/api/tiers', function(req, res) {
