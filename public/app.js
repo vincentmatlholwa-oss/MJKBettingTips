@@ -37,6 +37,7 @@ function formatTime(isoUTC) {
 }
 function isPast(iso) { return iso && new Date(iso).getTime() < Date.now(); }
 function cc(conf) { if (conf >= 85) return '#00e676'; if (conf >= 75) return '#00c8ff'; return '#f0b429'; }
+function esc(str) { return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
 
 // === TOAST SYSTEM ===
 function showToast(msg, type, duration) {
@@ -822,13 +823,13 @@ function renderTip(t, accaIdx) {
   var btn = accaIdx !== undefined ? '<button class="add-acca-btn" id="ab'+accaIdx+'" onclick="toggleAcca('+accaIdx+')">+ Add to Acca</button>' : '';
   var oddsBtn = '<button class="add-acca-btn" style="background:rgba(0,200,255,.08);border-color:rgba(0,200,255,.3);color:var(--cyan);" onclick="showOddsComparison(\''+encodeURIComponent(t.match)+'\',\''+(t.type||'soccer_epl')+'\',\''+encodeURIComponent(t.match)+'\')">📊 Compare Odds</button>';
   var shareBtn = '<div class="tip-share-row"><button class="share-btn share-wa" onclick="shareTip(\'' + encodeURIComponent(t.match) + '\',\'' + encodeURIComponent(t.pick + ' @ ' + t.odds + ' (' + t.conf + '%)') + '\',\'whatsapp\')">WhatsApp</button><button class="share-btn share-tw" onclick="shareTip(\'' + encodeURIComponent(t.match) + '\',\'' + encodeURIComponent(t.pick + ' @ ' + t.odds + ' (' + t.conf + '%)') + '\',\'twitter\')">Twitter</button><button class="share-btn share-copy" onclick="shareTip(\'' + encodeURIComponent(t.match) + '\',\'' + encodeURIComponent(t.pick + ' @ ' + t.odds + ' (' + t.conf + '%)') + '\',\'copy\')">Copy</button></div>';
-  var leagueHtml = t.league ? '<span class="league-chip">'+t.league+'</span>' : '';
-  var countryHtml = country ? '<span class="country-chip">'+country+'</span>' : '';
+  var leagueHtml = t.league ? '<span class="league-chip">'+esc(t.league)+'</span>' : '';
+  var countryHtml = country ? '<span class="country-chip">'+esc(country)+'</span>' : '';
   var mktBadge = '';
   if (t.marketType === 'ou') mktBadge = '<span class="mkt-badge ou">O/U</span>';
   else if (t.marketType === 'btts') mktBadge = '<span class="mkt-badge btts">BTTS</span>';
   else if (t.marketType === 'h2h') mktBadge = '<span class="mkt-badge h2h">' + ((t.type && (t.type.indexOf('mma_') === 0 || t.type.indexOf('darts_') === 0)) ? 'WINNER' : '1X2') + '</span>';
-  return '<div class="tip-card'+(t.valueBet?' value-card':'')+'" data-type="'+(t.type||'')+'" data-conf="'+t.conf+'" data-match="'+(t.match||'').toLowerCase()+'" data-league="'+(t.league||'').toLowerCase()+'"><div class="tip-sport-bar '+sportClass+'"><span>'+icon+' '+(t.sport||'Sport')+'</span>'+countryHtml+leagueHtml+mktBadge+'</div><div class="tip-body"><div class="tip-match">'+t.match+'</div><div class="tip-time">🕐 '+timeStr+'</div><div class="tip-pick"><div style="min-width:0;"><div class="tip-pick-label">'+t.market+'</div><div class="tip-pick-val">'+t.pick+' '+valueBadge+'</div></div>'+oddsHtml+'</div><div class="conf-bar"><div class="conf-fill" style="width:'+t.conf+'%;background:linear-gradient(90deg,'+c+'88,'+c+')"></div></div><div class="tip-footer"><span style="color:'+c+';font-weight:700">★ '+t.conf+'% Confidence</span><span class="tip-status">⏳ Pending</span></div><div class="banker-reason" style="margin-top:10px;font-size:11px;">'+t.reason+'</div>'+btn+oddsBtn+shareBtn+'</div></div>';
+  return '<div class="tip-card'+(t.valueBet?' value-card':'')+'" data-type="'+(t.type||'')+'" data-conf="'+t.conf+'" data-match="'+esc((t.match||'').toLowerCase())+'" data-league="'+esc((t.league||'').toLowerCase())+'"><div class="tip-sport-bar '+sportClass+'"><span>'+icon+' '+(t.sport||'Sport')+'</span>'+countryHtml+leagueHtml+mktBadge+'</div><div class="tip-body"><div class="tip-match">'+esc(t.match)+'</div><div class="tip-time">🕐 '+timeStr+'</div><div class="tip-pick"><div style="min-width:0;"><div class="tip-pick-label">'+esc(t.market)+'</div><div class="tip-pick-val">'+esc(t.pick)+' '+valueBadge+'</div></div>'+oddsHtml+'</div><div class="conf-bar"><div class="conf-fill" style="width:'+t.conf+'%;background:linear-gradient(90deg,'+c+'88,'+c+')"></div></div><div class="tip-footer"><span style="color:'+c+';font-weight:700">★ '+t.conf+'% Confidence</span><span class="tip-status">⏳ Pending</span></div><div class="banker-reason" style="margin-top:10px;font-size:11px;">'+esc(t.reason)+'</div>'+btn+oddsBtn+shareBtn+'</div></div>';
 }
 function shareTip(matchEnc, pickEnc, platform) {
   var match = decodeURIComponent(matchEnc);
@@ -861,9 +862,9 @@ function renderBanker(b, n) {
     if (b.realOdds.draw && b.pick === 'Draw') rp = b.realOdds.draw;
     realOddsHtml = '<div style="font-size:10px;color:var(--gold);margin-top:4px;">📈 '+b.bookmaker+' '+(rp?rp.toFixed(2):'')+'</div>';
   }
-  var leagueHtml = b.league ? '<span class="league-chip-sm">'+b.league+'</span>' : '';
-  var countryHtml = country ? '<span class="country-chip-sm">'+country+'</span>' : '';
-  return '<div class="banker-card'+(b.valueBet?' value-card':'')+'"><span class="banker-tag">⭐ Banker '+(n+1)+'</span><div class="banker-match">'+icon+' '+b.match+'</div><div class="banker-meta">'+leagueHtml+countryHtml+' · '+timeStr+'</div><div class="banker-reason">'+b.reason+'</div><div class="banker-foot"><div><div class="banker-pick-label">'+b.market+'</div><div class="banker-pick-val">'+b.pick+valueBadge+'</div></div><div class="banker-odds-big">'+b.odds+'</div></div>'+realOddsHtml+'<div class="banker-bar"><div class="banker-fill" style="width:'+b.conf+'%;background:linear-gradient(90deg,'+c+','+c+')"></div></div><div class="banker-conf">★ '+b.conf+'% Confidence</div></div>';
+  var leagueHtml = b.league ? '<span class="league-chip-sm">'+esc(b.league)+'</span>' : '';
+  var countryHtml = country ? '<span class="country-chip-sm">'+esc(country)+'</span>' : '';
+  return '<div class="banker-card'+(b.valueBet?' value-card':'')+'"><span class="banker-tag">⭐ Banker '+(n+1)+'</span><div class="banker-match">'+icon+' '+esc(b.match)+'</div><div class="banker-meta">'+leagueHtml+countryHtml+' · '+timeStr+'</div><div class="banker-reason">'+esc(b.reason)+'</div><div class="banker-foot"><div><div class="banker-pick-label">'+esc(b.market)+'</div><div class="banker-pick-val">'+esc(b.pick)+valueBadge+'</div></div><div class="banker-odds-big">'+esc(b.odds)+'</div></div>'+realOddsHtml+'<div class="banker-bar"><div class="banker-fill" style="width:'+b.conf+'%;background:linear-gradient(90deg,'+c+','+c+')"></div></div><div class="banker-conf">★ '+b.conf+'% Confidence</div></div>';
 }
 
 function fetchTips() {
@@ -939,7 +940,7 @@ function populateBankers() {
   if (el) {
     var html = '';
     for (var i = 0; i < BANKERS.length; i++) {
-      html += '<span class="ticker-item">⚽ ' + BANKERS[i].match + '<span class="sep">|</span>' + BANKERS[i].pick + ' @ ' + BANKERS[i].odds + '</span>';
+      html += '<span class="ticker-item">⚽ ' + esc(BANKERS[i].match) + '<span class="sep">|</span>' + esc(BANKERS[i].pick) + ' @ ' + esc(BANKERS[i].odds) + '</span>';
     }
     el.innerHTML = html || '<span class="ticker-item">Tips loading...</span>';
   }
@@ -1147,6 +1148,50 @@ function fetchHistory() {
   }).catch(function() {});
 }
 
+function fetchBankerResults() {
+  apiGet('/api/banker-results').then(function(data) {
+    var s = data.stats || {};
+    var wr = document.getElementById('bankerWinRate');
+    var tot = document.getElementById('bankerTotal');
+    var w = document.getElementById('bankerWon');
+    var l = document.getElementById('bankerLost');
+    if (wr) wr.textContent = s.winRate + '%';
+    if (tot) tot.textContent = s.total;
+    if (w) w.textContent = s.won;
+    if (l) l.textContent = s.lost;
+    var el = document.getElementById('bankerResultsWrap');
+    if (!el) return;
+    if (!data.tips || data.tips.length === 0) {
+      el.innerHTML = '<div class="empty-state">No banker results yet. Bankers are tips with 80%+ confidence.</div>';
+      return;
+    }
+    el.innerHTML = data.tips.map(function(t) {
+      var badge = t.result === 'won' ? '<span class="result-badge result-won">WON</span>' : '<span class="result-badge result-lost">LOST</span>';
+      var hc = ''; if (t.country) hc += ' · ' + t.country; if (t.league) hc += ' · ' + t.league;
+      return '<div class="hist-card"><div class="hist-top"><span class="hist-match">' + (t.icon || '') + ' ' + t.match + '</span><span class="hist-odds">' + t.odds + '</span></div><div class="hist-pick">' + t.pick + ' ' + badge + '</div><div class="hist-meta">' + t.sport + hc + ' · Conf: ' + t.conf + '%' + (t.kickoff ? ' · ' + formatTime(t.kickoff) : '') + '</div></div>';
+    }).join('');
+    renderBankerChart(data.stats);
+  }).catch(function() {});
+}
+
+function renderBankerChart(stats) {
+  if (typeof Chart === 'undefined' || !stats || stats.total === 0) return;
+  if (chartInstances.banker) chartInstances.banker.destroy();
+  var ctx = document.getElementById('bankerChart');
+  if (!ctx) return;
+  chartInstances.banker = new Chart(ctx.getContext('2d'), {
+    type: 'doughnut',
+    data: {
+      labels: ['Won', 'Lost'],
+      datasets: [{ data: [stats.won, stats.lost], backgroundColor: [chartColors.green, chartColors.red], borderWidth: 0 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: true, cutout: '65%',
+      plugins: { legend: { position: 'bottom', labels: { color: getChartTextColor(), padding: 16 } } }
+    }
+  });
+}
+
 function setTodayLabel() {
   var el = document.getElementById('todayLabel');
   if (!el) return;
@@ -1165,6 +1210,7 @@ function boot() {
   fetchTips();
   fetchStats();
   fetchHistory();
+  fetchBankerResults();
   updateAuthUI();
   if (currentUser) startSessionTimer();
 }
@@ -1181,12 +1227,14 @@ setInterval(function() {
   fetchTips();
   // Auto-refresh results every 5 minutes
   fetchHistory();
+  fetchBankerResults();
   // Trigger server-side result checking every 10 minutes
   if (Math.random() < 0.17) {
     apiPost('/api/check-results').then(function(d) {
       if (d && d.ok) {
         console.log('[RESULTS] Server checked: W=' + d.won + ' L=' + d.lost + ' Pending=' + d.pending);
         fetchHistory();
+        fetchBankerResults();
         fetchStats();
       }
     }).catch(function() {});

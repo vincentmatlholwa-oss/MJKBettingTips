@@ -302,6 +302,26 @@
   </div>
 </section>
 
+<!-- BANKER RESULTS -->
+<section aria-label="Banker Results">
+  <div class="tips-section" style="padding-bottom:10px;">
+    <div class="tips-header">
+      <div>
+        <div class="section-label">High Confidence Performance</div>
+        <div class="section-title">BANKER RESULTS</div>
+      </div>
+    </div>
+    <div class="dashboard-grid" id="bankerStatsGrid" style="max-width:600px;margin:0 auto 20px;">
+      <div class="dash-card"><div class="dash-label">Banker Win Rate</div><div class="dash-value" id="bankerWinRate">-</div></div>
+      <div class="dash-card"><div class="dash-label">Total Bankers</div><div class="dash-value" id="bankerTotal">-</div></div>
+      <div class="dash-card"><div class="dash-label">Won</div><div class="dash-value" id="bankerWon" style="color:var(--green);">-</div></div>
+      <div class="dash-card"><div class="dash-label">Lost</div><div class="dash-value" id="bankerLost" style="color:var(--red);">-</div></div>
+    </div>
+    <div class="chart-container" style="margin-bottom:20px;max-width:400px;margin-left:auto;margin-right:auto;"><canvas id="bankerChart"></canvas></div>
+    <div class="tips-grid" id="bankerResultsWrap"><div class="empty-state">No banker results yet. Bankers are tips with 80%+ confidence.</div></div>
+  </div>
+</section>
+
 <!-- TIERS INFO -->
 <section class="sub-section" id="pricingSection" aria-label="Pricing">
   <div class="sub-inner">

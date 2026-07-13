@@ -25,7 +25,21 @@ function escapeHtml(str) { return String(str || '').replace(/&/g, '&amp;').repla
 var app = express();
 app.use(compression());
 app.use(express.json());
-try { var helmet = require('helmet'); app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false })); } catch(e) {}
+try { var helmet = require('helmet'); app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://fonts.googleapis.com"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://cdn.jsdelivr.net"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com", "https://cdn.jsdelivr.net"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'"],
+      frameSrc: ["'none'"],
+      objectSrc: ["'none'"]
+    }
+  },
+  crossOriginEmbedderPolicy: false
+})); } catch(e) {}
 var port = process.env.PORT || 5000;
 var JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) { console.error('[SECURITY] WARNING: JWT_SECRET not set in .env!'); JWT_SECRET = crypto.randomBytes(32).toString('hex'); }
@@ -101,7 +115,7 @@ const DATA_BACKUP_FILES = [
   'adaptive_weights.json', 'team_stats.json', 'head_to_head.json', 'model_coeffs.json',
   'feature_log.json', 'sport_health.json', 'cached_odds.json', 'match_dates.json',
   'standings_cache.json', 'sportmonks_fixtures.json', 'darts_fixtures.json',
-  'racing_events.json', 'sport_prefs.json', 'users.json'
+  'racing_events.json', 'sport_prefs.json'
 ];
 
 async function githubGetFile(filePath) {
@@ -282,7 +296,19 @@ const ELO_BASE = 1500;
 const HOME_ADVANTAGE_ELO = 50;
 
 function loadJSON(file, def) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { return def; } }
-function saveJSON(file, data) { try { fs.writeFileSync(file, JSON.stringify(data, null, 2)); } catch (e) { console.error('[DATA] Save failed for ' + path.basename(file) + ': ' + (e.message || e).slice(0, 100)); } }
+var _writeQueues = {};
+function saveJSON(file, data) {
+  var key = file;
+  if (!_writeQueues[key]) _writeQueues[key] = Promise.resolve();
+  _writeQueues[key] = _writeQueues[key].then(function() {
+    return new Promise(function(resolve) {
+      fs.writeFile(file, JSON.stringify(data, null, 2), function(err) {
+        if (err) console.error('[DATA] Save failed for ' + path.basename(file) + ': ' + (err.message || err).slice(0, 100));
+        resolve();
+      });
+    });
+  });
+}
 
 // === Advanced AI loaders ===
 function loadTeamStats() { teamStats = loadJSON(TEAM_STATS_FILE, {}); }
@@ -586,7 +612,9 @@ function hashPassword(pw) {
 function verifyPassword(pw, stored) {
   var parts = stored.split(':');
   var salt = parts[0], hash = parts[1];
-  return crypto.pbkdf2Sync(pw, salt, 10000, 64, 'sha512').toString('hex') === hash;
+  var computed = crypto.pbkdf2Sync(pw, salt, 10000, 64, 'sha512').toString('hex');
+  if (computed.length !== hash.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(computed, 'utf8'), Buffer.from(hash, 'utf8'));
 }
 function generateToken(user) {
   return jwt.sign({ id: user.id, username: user.username, tier: user.tier, role: user.role || 'user' }, JWT_SECRET, { expiresIn: '7d' });
@@ -1655,6 +1683,32 @@ async function checkSportMonksResult(tip, home, away, now) {
   } catch (e) { return false; }
 }
 
+async function checkTennisResult(tip, home, away, now) {
+  try {
+    var tipKickoff = new Date(tip.kickoff);
+    var dateFrom = new Date(tipKickoff.getTime() - 86400000).toISOString().split('T')[0];
+    var dateTo = new Date(now.getTime() + 86400000).toISOString().split('T')[0];
+    var smUrl = 'https://api.sportmonks.com/v3/tennis/fixtures/between/' + dateFrom + '/' + dateTo + '?api_token=' + process.env.SPORTMONKS_API_KEY + '&include=scores';
+    var smRes = await fetch(smUrl, { signal: AbortSignal.timeout(8000) });
+    if (!smRes.ok) return false;
+    var smData = await smRes.json();
+    if (!smData.data || smData.data.length === 0) return false;
+    var fixture = smData.data.find(function(f) {
+      var fHome = (f.home_team && f.home_team.name) || '';
+      var fAway = (f.away_team && f.away_team.name) || '';
+      return (normalizeTeamName(fHome).indexOf(normalizeTeamName(home)) >= 0 || normalizeTeamName(home).indexOf(normalizeTeamName(fHome)) >= 0) &&
+             (normalizeTeamName(fAway).indexOf(normalizeTeamName(away)) >= 0 || normalizeTeamName(away).indexOf(normalizeTeamName(fAway)) >= 0) &&
+             f.status && f.status.name === 'Finished';
+    });
+    if (!fixture || !fixture.scores) return false;
+    var hg = fixture.scores.home || 0;
+    var ag = fixture.scores.away || 0;
+    if (hg === 0 && ag === 0) return false;
+    applyResultToTip(tip, home, away, hg, ag, now);
+    return true;
+  } catch (e) { return false; }
+}
+
 async function checkResults() {
   const now = new Date();
   const pending = trackedTips.filter(function(t) { return t.result === 'pending' && t.kickoff && new Date(t.kickoff) < new Date(now.getTime() - 2 * 60 * 60 * 1000); });
@@ -1699,6 +1753,11 @@ async function checkResults() {
       // Fallback: SportMonks football scores
       if (tip.type.startsWith('soccer_')) {
         var found = await checkSportMonksResult(tip, home, away, now);
+        if (found) { checked++; continue; }
+      }
+      // Fallback: SportMonks tennis scores
+      if (tip.type.startsWith('tennis_')) {
+        var found = await checkTennisResult(tip, home, away, now);
         if (found) { checked++; continue; }
       }
     } catch (e) { console.log('[RESULTS] Error checking ' + tip.match + ': ' + (e.message || e).slice(0, 100)); }
@@ -1842,11 +1901,15 @@ async function refreshTips() {
       console.log('[PUSH] Sent to ' + sent + ' subscribers');
     }
   } catch (e) { console.log('[PUSH] Error sending notification:', e.message); }
-  var staleCount = trackedTips.filter(function(t) { return t.result === 'pending' && t.kickoff && new Date(t.kickoff).getTime() < Date.now() - 3 * 86400000; }).length;
-  if (staleCount > 0) {
-    trackedTips = trackedTips.filter(function(t) { return !(t.result === 'pending' && t.kickoff && new Date(t.kickoff).getTime() < Date.now() - 3 * 86400000); });
+  var staleTips = trackedTips.filter(function(t) { return t.result === 'pending' && t.kickoff && new Date(t.kickoff).getTime() < Date.now() - 3 * 86400000; });
+  if (staleTips.length > 0) {
+    for (var si = 0; si < staleTips.length; si++) {
+      staleTips[si].result = 'void';
+      staleTips[si].voidedAt = new Date().toISOString();
+      staleTips[si].voidReason = 'No score data available after 3 days';
+    }
     saveTrackedTips();
-    console.log('[CLEANUP] Removed ' + staleCount + ' stale pending tips older than 3 days');
+    console.log('[CLEANUP] Marked ' + staleTips.length + ' stale tips as void (no score data)');
   }
   lastGenerated = new Date().toISOString();
   console.log('[REFRESH] Generated ' + cachedTips.length + ' tips (' + upcomingTips.length + ' upcoming, ' + allTips.length + ' total, ' + Object.keys(cachedOdds).filter(function(k) { return cachedOdds[k].length > 0; }).length + ' sports with odds)');
@@ -3395,6 +3458,30 @@ app.get('/api/premium/bankers', authMiddleware, function(req, res) {
   res.json({ count: bankers.length, tips: bankers.slice(0, 20) });
 });
 
+// Banker results (historical performance of high-confidence tips)
+app.get('/api/banker-results', rateLimit(60000, 10), function(req, res) {
+  var minConf = parseInt(req.query.minConf) || 80;
+  var bankers = trackedTips.filter(function(t) {
+    return t.conf >= minConf && (t.result === 'won' || t.result === 'lost');
+  });
+  bankers.sort(function(a, b) { return (b.kickoff || '').localeCompare(a.kickoff || ''); });
+  var won = bankers.filter(function(t) { return t.result === 'won'; }).length;
+  var lost = bankers.filter(function(t) { return t.result === 'lost'; }).length;
+  var total = won + lost;
+  var bySport = {};
+  for (var i = 0; i < bankers.length; i++) {
+    var t = bankers[i];
+    if (!bySport[t.sport]) bySport[t.sport] = { sport: t.sport, icon: t.icon, won: 0, lost: 0 };
+    bySport[t.sport][t.result]++;
+  }
+  res.json({
+    count: bankers.length,
+    stats: { won: won, lost: lost, total: total, winRate: total > 0 ? Math.round((won / total) * 100) : 0 },
+    bySport: Object.values(bySport),
+    tips: bankers.slice(0, 100)
+  });
+});
+
 // Premium: Unlimited tips (uncapped)
 app.get('/api/premium/unlimited', authMiddleware, function(req, res) {
   var users = loadUsers(); var user = users[req.user.username];
@@ -3657,7 +3744,7 @@ app.get('/api/backtest', authMiddleware, adminMiddleware, function(req, res) {
   });
 });
 
-app.post('/api/auth/forgot-password', function(req, res) {
+app.post('/api/auth/forgot-password', rateLimit(15 * 60 * 1000, 5), function(req, res) {
   var username = (req.body.username || '').trim().toLowerCase();
   var users = loadUsers();
   if (!users[username]) return res.json({ success: true, message: 'If the user exists, a reset link has been generated.' });
@@ -3673,7 +3760,8 @@ app.post('/api/auth/reset-password', function(req, res) {
   var username = (req.body.username || '').trim().toLowerCase();
   var token = req.body.token || '';
   var newPassword = req.body.password || '';
-  if (!username || !token || !newPassword || newPassword.length < 4) return res.status(400).json({ error: 'Invalid request. Password must be 4+ chars.' });
+  if (!username || !token || !newPassword || newPassword.length < 8) return res.status(400).json({ error: 'Invalid request. Password must be 8+ characters with uppercase, lowercase, and number.' });
+  if (!/[A-Z]/.test(newPassword) || !/[a-z]/.test(newPassword) || !/[0-9]/.test(newPassword)) return res.status(400).json({ error: 'Password must include uppercase, lowercase, and a number.' });
   var users = loadUsers();
   var user = users[username];
   if (!user || user.resetToken !== token || !user.resetExpires || Date.now() > user.resetExpires) return res.status(400).json({ error: 'Invalid or expired reset token.' });
@@ -3684,7 +3772,7 @@ app.post('/api/auth/reset-password', function(req, res) {
   res.json({ success: true, message: 'Password reset successfully.' });
 });
 
-app.post('/api/subscribe', authMiddleware, function(req, res) {
+app.post('/api/subscribe', authMiddleware, rateLimit(60 * 60 * 1000, 3), function(req, res) {
   var tier = req.body.tier;
   if (!TIERS[tier]) return res.status(400).json({ error: 'Invalid tier' });
   if (tier === 'free') return res.status(400).json({ error: 'Already on free tier' });
@@ -3692,18 +3780,18 @@ app.post('/api/subscribe', authMiddleware, function(req, res) {
   var user = users[req.user.username];
   if (!user) return res.status(401).json({ error: 'User not found' });
   if (user.tier !== 'free') return res.status(400).json({ error: 'Already subscribed. Contact admin to change tier.' });
-  var paymentRef = req.body.paymentRef || '';
+  var paymentRef = (req.body.paymentRef || '').trim();
   if (!paymentRef || paymentRef.length < 5) return res.status(400).json({ error: 'Payment reference required. Complete payment first.' });
   var msg = 'Subscription request: @' + req.user.username + ' wants ' + tier + ' plan (R' + TIERS[tier].price + ') ref: ' + paymentRef;
   console.log('[SUB] ' + msg);
-  user.tier = tier;
-  user.subscribedAt = new Date().toISOString();
+  user.pendingTier = tier;
+  user.pendingSubAt = new Date().toISOString();
   user.paymentRef = paymentRef;
   saveUsers(users);
   if (TELEGRAM_BOT_TOKEN) {
-    loadTelegramSubs().forEach(function(s) { sendTelegram(s.chatId, 'New subscriber: @' + req.user.username + ' → ' + tier); });
+    loadTelegramSubs().forEach(function(s) { sendTelegram(s.chatId, 'New subscription request: @' + req.user.username + ' → ' + tier + ' (ref: ' + paymentRef + ')'); });
   }
-  res.json({ success: true, tier: tier, message: 'Upgraded to ' + tier + '.' });
+  res.json({ success: true, tier: 'pending', message: 'Payment reference submitted. Your tier will be activated after admin verification.' });
 });
 
 const ADMIN_PHONE = '27677834591';
@@ -3851,7 +3939,7 @@ function scheduleDailyBroadcast() {
 app.get('/api/admin/users', authMiddleware, adminMiddleware, function(req, res) {
   var users = loadUsers();
   var list = Object.keys(users).map(function(k) {
-    return { username: k, tier: users[k].tier, role: users[k].role, createdAt: users[k].createdAt, subscribedAt: users[k].subscribedAt || null };
+    return { username: k, tier: users[k].tier, role: users[k].role, createdAt: users[k].createdAt, subscribedAt: users[k].subscribedAt || null, pendingTier: users[k].pendingTier || null, paymentRef: users[k].paymentRef || null };
   });
   res.json({ users: list, total: list.length });
 });
@@ -3867,6 +3955,8 @@ app.post('/api/admin/set-tier', authMiddleware, adminMiddleware, function(req, r
   users[targetUser].tier = newTier;
   users[targetUser].subscribedAt = new Date().toISOString();
   users[targetUser].subscribedBy = req.user.username;
+  delete users[targetUser].pendingTier;
+  delete users[targetUser].paymentRef;
   saveUsers(users);
   console.log('[ADMIN] ' + req.user.username + ' changed ' + targetUser + ' from ' + oldTier + ' to ' + newTier);
   res.json({ success: true, username: targetUser, oldTier: oldTier, newTier: newTier });
