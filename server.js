@@ -67,6 +67,8 @@ const TELEGRAM_GROUP_ID = process.env.TELEGRAM_GROUP_ID || '';
 const WHATSAPP_INSTANCE_ID = process.env.WHATSAPP_INSTANCE_ID || '';
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN || '';
 const ADMIN_WHATSAPP = process.env.ADMIN_WHATSAPP || '+27677834591';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 const RESULTS_FILE = path.join(DATA_DIR, 'tracked_results.json');
 const ELO_FILE = path.join(DATA_DIR, 'elo_ratings.json');
@@ -1925,6 +1927,21 @@ async function refreshTips() {
     }
     console.log('[SPORTMONKS] Generated tips from ' + cachedSportMonksFixtures.length + ' fixtures');
   }
+  // Gemini batch analysis — enrich tips with AI insights
+  if (GEMINI_API_KEY && allTips.length > 0) {
+    try {
+      var geminiMatches = allTips.slice(0, 10).map(function(t) {
+        var parts = t.match.split(' vs ');
+        return { home: parts[0] || '', away: parts[1] || '', sport: t.sport, league: t.league, eloHome: 1500, eloAway: 1500, formHome: 0, formAway: 0 };
+      });
+      var insights = await geminiBatchAnalysis(geminiMatches);
+      for (var gi = 0; gi < allTips.length; gi++) {
+        var insight = insights[allTips[gi].match];
+        if (insight) allTips[gi].reason = allTips[gi].reason + ' AI: ' + insight;
+      }
+      console.log('[GEMINI] Enriched ' + Object.keys(insights).length + ' tips with AI analysis');
+    } catch (e) { console.log('[GEMINI] Batch analysis failed:', e.message); }
+  }
   for (var ti = 0; ti < allTips.length; ti++) mergeTip(allTips[ti]);
   saveTrackedTips();
   var upcomingTips = allTips.filter(function(t) { return t.kickoff && new Date(t.kickoff).getTime() > Date.now(); });
@@ -2526,6 +2543,56 @@ async function fetchSportMonksFixtures() {
     console.log('[SPORTMONKS] Error: ' + (e.message || e).slice(0, 200));
     sportMonksFetchDate = today;
   }
+}
+
+// === GEMINI AI MATCH ANALYSIS ===
+var geminiAnalysisCache = {};
+async function geminiMatchAnalysis(home, away, league, sport, eloHome, eloAway, formHome, formAway, oddsHome, oddsAway) {
+  if (!GEMINI_API_KEY) return null;
+  var cacheKey = home + '|' + away + '|' + league;
+  if (geminiAnalysisCache[cacheKey]) return geminiAnalysisCache[cacheKey];
+  try {
+    var prompt = 'You are a sports analyst. Analyze this ' + sport + ' match briefly in 2-3 sentences max. Be specific about key factors.\n' +
+      'Match: ' + home + ' vs ' + away + '\n' +
+      'League: ' + league + '\n' +
+      'ELO ratings: ' + home + ' ' + Math.round(eloHome) + ', ' + away + ' ' + Math.round(eloAway) + '\n' +
+      'Recent form: ' + home + ' ' + formHome + ', ' + away + ' ' + formAway + '\n' +
+      (oddsHome ? 'Market odds: ' + home + ' ' + oddsHome + ', ' + away + ' ' + oddsAway + '\n' : '') +
+      'Return ONLY the analysis text, no labels or formatting.';
+    var body = JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.4, maxOutputTokens: 200 } });
+    var res = await fetch(GEMINI_API_BASE + '/gemini-2.0-flash-lite:generateContent?key=' + GEMINI_API_KEY, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body,
+      signal: AbortSignal.timeout(10000)
+    });
+    if (!res.ok) return null;
+    var data = await res.json();
+    var text = data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts[0] && data.candidates[0].content.parts[0].text;
+    if (text) { geminiAnalysisCache[cacheKey] = text.trim(); return text.trim(); }
+    return null;
+  } catch (e) { return null; }
+}
+async function geminiBatchAnalysis(matches) {
+  if (!GEMINI_API_KEY || !matches || matches.length === 0) return {};
+  var prompt = 'You are a sports betting analyst. For each match below, provide a 1-sentence key insight. Return JSON object mapping match key to insight.\n\n';
+  for (var i = 0; i < Math.min(matches.length, 10); i++) {
+    var m = matches[i];
+    prompt += (i + 1) + '. ' + m.home + ' vs ' + m.away + ' (' + m.sport + ', ' + m.league + ')' +
+      ' | ELO: ' + Math.round(m.eloHome) + ' vs ' + Math.round(m.eloAway) +
+      ' | Form: ' + m.formHome + ' vs ' + m.formAway + '\n';
+  }
+  prompt += '\nReturn JSON: {"match_key": "one sentence insight", ...}. Match key is "home vs away".';
+  try {
+    var body = JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.3, maxOutputTokens: 800, responseMimeType: 'application/json' } });
+    var res = await fetch(GEMINI_API_BASE + '/gemini-2.0-flash-lite:generateContent?key=' + GEMINI_API_KEY, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body,
+      signal: AbortSignal.timeout(15000)
+    });
+    if (!res.ok) return {};
+    var data = await res.json();
+    var text = data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts[0] && data.candidates[0].content.parts[0].text;
+    if (text) return JSON.parse(text);
+    return {};
+  } catch (e) { return {}; }
 }
 
 // === BSD AI PREDICTIONS (CatBoost ML, free, unlimited) ===
