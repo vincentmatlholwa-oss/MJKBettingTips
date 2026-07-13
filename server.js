@@ -1685,27 +1685,56 @@ async function checkSportMonksResult(tip, home, away, now) {
 
 async function checkTennisResult(tip, home, away, now) {
   try {
+    var tour = tip.type.indexOf('wta') >= 0 ? 'wta' : 'atp';
     var tipKickoff = new Date(tip.kickoff);
-    var dateFrom = new Date(tipKickoff.getTime() - 86400000).toISOString().split('T')[0];
-    var dateTo = new Date(now.getTime() + 86400000).toISOString().split('T')[0];
-    var smUrl = 'https://api.sportmonks.com/v3/tennis/fixtures/between/' + dateFrom + '/' + dateTo + '?api_token=' + process.env.SPORTMONKS_API_KEY + '&include=scores';
-    var smRes = await fetch(smUrl, { signal: AbortSignal.timeout(8000) });
-    if (!smRes.ok) return false;
-    var smData = await smRes.json();
-    if (!smData.data || smData.data.length === 0) return false;
-    var fixture = smData.data.find(function(f) {
-      var fHome = (f.home_team && f.home_team.name) || '';
-      var fAway = (f.away_team && f.away_team.name) || '';
-      return (normalizeTeamName(fHome).indexOf(normalizeTeamName(home)) >= 0 || normalizeTeamName(home).indexOf(normalizeTeamName(fHome)) >= 0) &&
-             (normalizeTeamName(fAway).indexOf(normalizeTeamName(away)) >= 0 || normalizeTeamName(away).indexOf(normalizeTeamName(fAway)) >= 0) &&
-             f.status && f.status.name === 'Finished';
-    });
-    if (!fixture || !fixture.scores) return false;
-    var hg = fixture.scores.home || 0;
-    var ag = fixture.scores.away || 0;
-    if (hg === 0 && ag === 0) return false;
-    applyResultToTip(tip, home, away, hg, ag, now);
-    return true;
+    var dates = [];
+    dates.push(tipKickoff.toISOString().split('T')[0].replace(/-/g, ''));
+    var nextDay = new Date(tipKickoff.getTime() + 86400000).toISOString().split('T')[0].replace(/-/g, '');
+    if (dates[0] !== nextDay) dates.push(nextDay);
+    var prevDay = new Date(tipKickoff.getTime() - 86400000).toISOString().split('T')[0].replace(/-/g, '');
+    if (prevDay !== dates[0]) dates.unshift(prevDay);
+    for (var di = 0; di < dates.length; di++) {
+      var espnUrl = 'https://site.api.espn.com/apis/site/v2/sports/tennis/' + tour + '/scoreboard?dates=' + dates[di];
+      var espnRes = await fetch(espnUrl, { signal: AbortSignal.timeout(8000) });
+      if (!espnRes.ok) continue;
+      var espnData = await espnRes.json();
+      if (!espnData.events) continue;
+      for (var ei = 0; ei < espnData.events.length; ei++) {
+        var ev = espnData.events[ei];
+        if (!ev.groupings) continue;
+        for (var gi = 0; gi < ev.groupings.length; gi++) {
+          var comps = ev.groupings[gi].competitions || [];
+          for (var ci = 0; ci < comps.length; ci++) {
+            var comp = comps[ci];
+            if (!comp.status || !comp.status.type || !comp.status.type.completed) continue;
+            if (!comp.competitors || comp.competitors.length < 2) continue;
+            var p1 = comp.competitors[0], p2 = comp.competitors[1];
+            var n1 = (p1.athlete && p1.athlete.displayName) || '';
+            var n2 = (p2.athlete && p2.athlete.displayName) || '';
+            var nn1 = normalizeTeamName(n1), nn2 = normalizeTeamName(n2);
+            var nh = normalizeTeamName(home), na = normalizeTeamName(away);
+            var match = false;
+            if ((nn1.indexOf(nh) >= 0 || nh.indexOf(nn1) >= 0) && (nn2.indexOf(na) >= 0 || na.indexOf(nn2) >= 0)) match = true;
+            if ((nn1.indexOf(na) >= 0 || na.indexOf(nn1) >= 0) && (nn2.indexOf(nh) >= 0 || nh.indexOf(nn2) >= 0)) match = true;
+            if (!match) continue;
+            var ls1 = p1.linescores || [], ls2 = p2.linescores || [];
+            if (ls1.length === 0 || ls2.length === 0) continue;
+            var s1 = 0, s2 = 0;
+            for (var si = 0; si < ls1.length; si++) {
+              if ((ls1[si].value || 0) > (ls2[si] ? ls2[si].value || 0 : 0)) s1++;
+              else if ((ls2[si] ? ls2[si].value || 0 : 0) > (ls1[si].value || 0)) s2++;
+            }
+            if (s1 === 0 && s2 === 0) continue;
+            var homeScore = 0, awayScore = 0;
+            if ((nn1.indexOf(nh) >= 0 || nh.indexOf(nn1) >= 0)) { homeScore = s1; awayScore = s2; }
+            else { homeScore = s2; awayScore = s1; }
+            applyResultToTip(tip, home, away, homeScore, awayScore, now);
+            return true;
+          }
+        }
+      }
+    }
+    return false;
   } catch (e) { return false; }
 }
 
