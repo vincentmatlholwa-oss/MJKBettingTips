@@ -1094,10 +1094,20 @@ function checkSportHealth() {
     var total = recent.length;
     var rate = total >= 10 ? (won / total) : -1;
     if (rate >= 0 && rate < 0.40) {
-      disabledSports[sk] = true;
-      console.log('[HEALTH] Disabled ' + sk + ' (win rate ' + (rate * 100).toFixed(0) + '%, ' + total + ' tips)');
+      if (!disabledSports[sk]) {
+        disabledSports[sk] = { since: new Date().toISOString() };
+        console.log('[HEALTH] Disabled ' + sk + ' (win rate ' + (rate * 100).toFixed(0) + '%, ' + total + ' tips)');
+      } else if (disabledSports[sk].since) {
+        var disabledSince = new Date(disabledSports[sk].since).getTime();
+        if (Date.now() - disabledSince > 7 * 86400000) {
+          delete disabledSports[sk];
+          console.log('[HEALTH] Re-enabled ' + sk + ' after 7-day cooldown (win rate ' + (rate * 100).toFixed(0) + '%)');
+        }
+      }
     } else if (rate >= 0.50) {
-      delete disabledSports[sk];
+      if (disabledSports[sk]) delete disabledSports[sk];
+    } else if (rate < 0 && total > 0) {
+      // rate < 0 means total < 10 resolved tips — allow generation to accumulate data
     }
     sportHealth[sk] = { wins: won, total: total, rate: rate, lastChecked: new Date().toISOString() };
   }
@@ -1517,7 +1527,7 @@ function buildBaseballTip(oddsMatch, sport) {
   var valueNote = ' Value +' + (valueMargin * 100).toFixed(0) + '%';
   var hForm3 = getFormWindow(sport.key, home, cfg.formWindow);
   var aForm3 = getFormWindow(sport.key, away, cfg.formWindow);
-  var reason = buildTipReason({ marketType: 'h2h', market: 'Match Winner', pick: tipText, home: home, away: away, poisson: poisson, eloH: adjustedElo, eloA: adjustedEloA, hForm: hForm3, aForm: aForm3, bsdPred: bsdPred, afPred: afPred, ensembleResult: { unanimous: false, agree: false }, expectedTotal: poisson.expectedHomeGoals + poisson.expectedAwayGoals, valueEdge: valueMargin });
+  var reason = buildTipReason({ marketType: 'h2h', market: 'Match Winner', pick: tipText, home: home, away: away, poisson: null, eloH: adjustedElo, eloA: adjustedEloA, hForm: hForm3, aForm: aForm3, bsdPred: null, afPred: null, ensembleResult: { unanimous: false, agree: false }, expectedTotal: 0, valueEdge: valueMargin });
   return { type: sport.key, sport: sport.name, icon: sport.icon, match: home + ' vs ' + away, league: sport.name, country: COUNTRY_MAP[sport.key] || '', marketType: 'h2h', market: 'Match Winner', marketLine: null, kickoff: oddsMatch.commence_time, pick: tipText, odds: odds, conf: confidence, realOdds: { home: consensus.bestHomePrice || null, away: consensus.bestAwayPrice || null, draw: null }, bookmaker: bookmaker, valueBet: true, reason: reason, features: features };
 }
 
@@ -1600,12 +1610,18 @@ function determineWin(tip, home, away, hScore, aScore) {
     var both = (parseInt(hScore, 10) || 0) > 0 && (parseInt(aScore, 10) || 0) > 0;
     return tip.pick === 'Yes' ? both : !both;
   }
+  if (tip.marketType === 'corner') {
+    var corners = (parseInt(hScore, 10) || 0) + (parseInt(aScore, 10) || 0);
+    var cornerLine = parseFloat(tip.marketLine) || 9.5;
+    return tip.pick.indexOf('Over') >= 0 ? corners > cornerLine : corners < cornerLine;
+  }
   const homeWin = hScore > aScore, awayWin = aScore > hScore;
   if (tip.pick === 'Draw') return hScore === aScore;
   if (tip.pick.indexOf('or Draw') >= 0 && tip.pick.indexOf(home) >= 0) return hScore >= aScore;
   if (tip.pick.indexOf('or Draw') >= 0 && tip.pick.indexOf(away) >= 0) return aScore >= hScore;
   if (tip.pick.indexOf(home) >= 0 && tip.pick.indexOf('or Draw') < 0) return homeWin;
   if (tip.pick.indexOf(away) >= 0 && tip.pick.indexOf('or Draw') < 0) return awayWin;
+  console.log('[RESULTS] WARNING: Unknown marketType "' + tip.marketType + '" for ' + tip.match + ' — marking as lost');
   return false;
 }
 
@@ -1624,7 +1640,6 @@ function applyResultToTip(tip, home, away, hScore, aScore, now) {
   updateMatchDate(home, tip.kickoff);
   updateMatchDate(away, tip.kickoff);
   logFeature(tip.type, tip.features, won);
-  trainSportModel(tip.type);
   console.log('[RESULTS] ' + tip.match + ' → ' + tip.result.toUpperCase() + ' (predicted: ' + tip.pick + ')');
   return won;
 }
@@ -2266,20 +2281,8 @@ function buildHorseRacingTip(event) {
     };
   }
 
-  // Fallback: Race card without any runner data
-  var conf3 = isSA ? 72 : 65;
-  var raceLabel = track + (raceNum ? ' — Race ' + raceNum : '');
-
-  return {
-    type: 'horse_racing', sport: 'Horse Racing', icon: '\uD83C\uDFC7',
-    match: countryFlag + ' ' + raceLabel,
-    league: track || 'Horse Racing', country: country || 'International',
-    marketType: 'h2h', market: 'Race Winner', marketLine: null,
-    kickoff: time, pick: 'Runners to be confirmed', odds: 'TBD',
-    conf: conf3, realOdds: null, bookmaker: '', valueBet: false,
-    reason: 'Horse racing card — ' + country + ' — ' + timeStr + (formUrl ? ' | ' + formUrl : ''),
-    features: [0, 0, 0, 0, 0, 0, 0, 1]
-  };
+  // Fallback: Race card without any runner data — don't create a placeholder tip
+  return null;
 }
 
 // === DARTS (SportDevs free API: 300 req/day) ===
