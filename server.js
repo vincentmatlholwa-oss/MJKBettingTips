@@ -1906,51 +1906,58 @@ async function checkResults() {
     var tip = pending[i];
     try {
       var home, away; var parts = tip.match.split(' vs '); home = parts[0]; away = parts[1];
-      // Soccer: try football-data.org per-competition (free tier) first
-      if (tip.type.startsWith('soccer_') && tip.type !== 'soccer_usa_mls') {
-        var found = await checkFBCompetitionResult(tip, home, away, now);
-        if (found) { checked++; continue; }
+      var found = false;
+      // Horse racing placeholders with no real pick — mark void
+      if (tip.type === 'horse_racing' && (!tip.pick || tip.pick.indexOf('form guide') >= 0 || tip.odds === 'TBD')) {
+        tip.result = 'void'; tip.checkedAt = now.toISOString(); tip.homeScore = 0; tip.awayScore = 0;
+        console.log('[RESULTS] Void: ' + tip.match + ' (no actual pick)');
+        found = true;
       }
-      // Cricket: SportMonks API
-      if (tip.type === 'cricket_international_t20') {
-        var found = await checkCricketResult(tip, home, away, now);
-        if (found) { checked++; continue; }
+      // 1) Soccer: try football-data.org per-competition (free tier)
+      if (!found && tip.type.startsWith('soccer_') && tip.type !== 'soccer_usa_mls') {
+        found = await checkFBCompetitionResult(tip, home, away, now);
       }
-      // Tennis: ESPN free API
-      if (tip.type.startsWith('tennis_')) {
-        var found = await checkESPNResult(tip, home, away, now);
-        if (found) { checked++; continue; }
-        var found = await checkTennisResult(tip, home, away, now);
-        if (found) { checked++; continue; }
+      // 2) Tennis: try ESPN free API
+      if (!found && tip.type.startsWith('tennis_')) {
+        found = await checkESPNResult(tip, home, away, now);
+        if (!found) found = await checkTennisResult(tip, home, away, now);
       }
-      // Try the-odds-api (works for MLB, NRL, AFL, etc. — only if credits available)
-      var res = await fetch(ODDS_API_BASE + '/sports/' + tip.type + '/scores?apiKey=' + ODDS_API_KEY + '&daysFrom=2');
-      if (res.ok) {
-        var scores = await res.json();
-        if (scores && scores.length > 0) {
-          var match = scores.find(function(s) { return normalizeTeamName(s.home_team) === normalizeTeamName(home) && normalizeTeamName(s.away_team) === normalizeTeamName(away) && s.completed === true && s.scores; });
-          if (match && match.scores) {
-            var hScore = parseInt(match.scores[0] ? match.scores[0].score : (match.scores.home || 0), 10);
-            var aScore = parseInt(match.scores[1] ? match.scores[1].score : (match.scores.away || 0), 10);
-            applyResultToTip(tip, home, away, hScore, aScore, now);
-            checked++;
-            continue;
+      // 3) Cricket: SportMonks API
+      if (!found && tip.type === 'cricket_international_t20') {
+        found = await checkCricketResult(tip, home, away, now);
+      }
+      // 4) ESPN free API — covers soccer, NFL, MLB, tennis, FIFA WC (has timeout via safeFetch)
+      if (!found) {
+        found = await checkESPNResult(tip, home, away, now);
+      }
+      // 5) the-odds-api scores (has credits issues — use safeFetch with 8s timeout)
+      if (!found) {
+        try {
+          var res = await safeFetch(ODDS_API_BASE + '/sports/' + tip.type + '/scores?apiKey=' + ODDS_API_KEY + '&daysFrom=2', {}, 8000);
+          if (res.ok) {
+            var scores = await res.json();
+            if (scores && scores.length > 0) {
+              var match = scores.find(function(s) { return normalizeTeamName(s.home_team) === normalizeTeamName(home) && normalizeTeamName(s.away_team) === normalizeTeamName(away) && s.completed === true && s.scores; });
+              if (match && match.scores) {
+                var hScore = parseInt(match.scores[0] ? match.scores[0].score : (match.scores.home || 0), 10);
+                var aScore = parseInt(match.scores[1] ? match.scores[1].score : (match.scores.away || 0), 10);
+                applyResultToTip(tip, home, away, hScore, aScore, now);
+                found = true;
+              }
+            }
           }
-        }
+        } catch (e) {}
       }
-      // Fallback: ESPN free API (covers soccer, NFL, MLB, NRL, AFL, cricket)
-      var found = await checkESPNResult(tip, home, away, now);
-      if (found) { checked++; continue; }
-      // Fallback: API-Football (free 100/day)
-      if (tip.type.startsWith('soccer_')) {
-        var found = await checkAPIFootballResult(tip, home, away, now);
-        if (found) { checked++; continue; }
+      // 6) API-Football (free 100/day — soccer only)
+      if (!found && tip.type.startsWith('soccer_')) {
+        found = await checkAPIFootballResult(tip, home, away, now);
       }
-      // Fallback: SportMonks football scores
-      if (tip.type.startsWith('soccer_')) {
-        var found = await checkSportMonksResult(tip, home, away, now);
-        if (found) { checked++; continue; }
+      // 7) SportMonks football scores
+      if (!found && tip.type.startsWith('soccer_')) {
+        found = await checkSportMonksResult(tip, home, away, now);
       }
+      if (found) checked++;
+      else console.log('[RESULTS] No source for ' + tip.type + ': ' + tip.match);
     } catch (e) { console.log('[RESULTS] Error checking ' + tip.match + ': ' + (e.message || e).slice(0, 100)); }
   }
   saveTrackedTips();
