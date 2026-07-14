@@ -172,6 +172,7 @@ function showAuthModal(mode) {
   if (_closeAuthTimer) { clearTimeout(_closeAuthTimer); _closeAuthTimer = null; }
   var m = document.getElementById('authModal');
   if (!m) return;
+  m.style.display = '';
   m.classList.add('open');
   document.getElementById('authTitle').textContent = mode === 'login' ? 'Login' : 'Register';
   document.getElementById('authBtn').textContent = mode === 'login' ? 'Login' : 'Register';
@@ -238,6 +239,7 @@ function closeAuth() {
   if (oddsContent) oddsContent.remove();
   if (m) {
     m.classList.remove('open');
+    m.style.display = '';
   }
 }
 function handleAuth() {
