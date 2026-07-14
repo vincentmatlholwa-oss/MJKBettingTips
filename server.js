@@ -1892,8 +1892,8 @@ var ESPN_LEAGUE_MAP = {
   'americanfootball_nfl': 'football/nfl',
   'baseball_mlb': 'baseball/mlb',
   'mma_mixed_martial_arts': 'mma/ufc',
-  'rugbyleague_nrl': '',
-  'aussierules_afl': '',
+  'rugbyleague_nrl': 'rugby-league/3',
+  'aussierules_afl': 'australian-football/afl',
   'cricket_international_t20': ''
 };
 
@@ -2016,7 +2016,9 @@ var ESPN_SCOREBOARD_SLUGS = {
   'tennis_wta_wimbledon': 'tennis/wta',
   'americanfootball_nfl': 'football/nfl',
   'baseball_mlb': 'baseball/mlb',
-  'mma_mixed_martial_arts': 'mma/ufc'
+  'mma_mixed_martial_arts': 'mma/ufc',
+  'rugbyleague_nrl': 'rugby-league/3',
+  'aussierules_afl': 'australian-football/afl'
 };
 var cachedESPNNonSoccer = {};
 async function fetchESPNNonSoccerFixtures() {
@@ -2092,6 +2094,41 @@ function buildESPNFixtureTip(event, sportKey) {
   };
 }
 
+// === DARTS PDC RESULT CHECKER (SofaScore + dartsrankings — free, no API key) ===
+async function checkDartsPDCResult(tip, home, away, now) {
+  var sources = [
+    'https://api.sofascore.com/api/v1/sport/darts/events/last/0',
+    'https://api.sofascore.com/api/v1/sport/darts/events/last/1'
+  ];
+  for (var si = 0; si < sources.length; si++) {
+    try {
+      var res = await safeFetch(sources[si], { headers: { 'User-Agent': 'Mozilla/5.0 MJKTips/1.0', 'Accept': 'application/json' } }, 8000);
+      if (!res.ok) continue;
+      var data = await res.json();
+      var events = (data && data.events) ? data.events : [];
+      for (var ei = 0; ei < events.length; ei++) {
+        var ev = events[ei];
+        if (!ev.status || ev.status.type !== 'finished') continue;
+        var h = ev.homeTeam ? ev.homeTeam.name : '';
+        var a = ev.awayTeam ? ev.awayTeam.name : '';
+        var nh = normalizeTeamName(h).toLowerCase(), na = normalizeTeamName(a).toLowerCase();
+        var nth = normalizeTeamName(home).toLowerCase(), nta = normalizeTeamName(away).toLowerCase();
+        var matchFound = false;
+        if ((nh.indexOf(nth) >= 0 || nth.indexOf(nh) >= 0) && (na.indexOf(nta) >= 0 || nta.indexOf(na) >= 0)) matchFound = true;
+        if ((nh.indexOf(nta) >= 0 || nta.indexOf(nh) >= 0) && (na.indexOf(nth) >= 0 || nth.indexOf(na) >= 0)) matchFound = true;
+        if (!matchFound) continue;
+        var hScore = ev.homeScore && typeof ev.homeScore.display !== 'undefined' ? parseInt(ev.homeScore.display, 10) : (ev.homeScore && ev.homeScore.current ? parseInt(ev.homeScore.current, 10) : 0);
+        var aScore = ev.awayScore && typeof ev.awayScore.display !== 'undefined' ? parseInt(ev.awayScore.display, 10) : (ev.awayScore && ev.awayScore.current ? parseInt(ev.awayScore.current, 10) : 0);
+        if (hScore === 0 && aScore === 0) continue;
+        applyResultToTip(tip, home, away, hScore, aScore, now);
+        console.log('[RESULTS] Darts PDC (SofaScore): ' + tip.match + ' → ' + hScore + '-' + aScore);
+        return true;
+      }
+    } catch (e) {}
+  }
+  return false;
+}
+
 async function checkResults() {
   const now = new Date();
   const pending = trackedTips.filter(function(t) { return t.result === 'pending' && t.kickoff && new Date(t.kickoff) < new Date(now.getTime() - 2 * 60 * 60 * 1000); });
@@ -2122,11 +2159,15 @@ async function checkResults() {
       if (!found && tip.type === 'cricket_international_t20') {
         found = await checkCricketResult(tip, home, away, now);
       }
-      // 4) ESPN free API — covers soccer, NFL, MLB, tennis, FIFA WC (has timeout via safeFetch)
+      // 4) Darts PDC: scrape SofaScore or dartsrankings
+      if (!found && tip.type === 'darts_pdc') {
+        found = await checkDartsPDCResult(tip, home, away, now);
+      }
+      // 5) ESPN free API — covers soccer, NFL, MLB, tennis, NFL, NRL, AFL, MMA (has timeout via safeFetch)
       if (!found) {
         found = await checkESPNResult(tip, home, away, now);
       }
-      // 5) the-odds-api scores (has credits issues — use safeFetch with 8s timeout)
+      // 6) the-odds-api scores (has credits issues — use safeFetch with 8s timeout)
       if (!found) {
         try {
           var res = await safeFetch(ODDS_API_BASE + '/sports/' + tip.type + '/scores?apiKey=' + ODDS_API_KEY + '&daysFrom=2', {}, 8000);
@@ -2144,11 +2185,11 @@ async function checkResults() {
           }
         } catch (e) {}
       }
-      // 6) API-Football (free 100/day — soccer only)
+      // 7) API-Football (free 100/day — soccer only)
       if (!found && tip.type.startsWith('soccer_')) {
         found = await checkAPIFootballResult(tip, home, away, now);
       }
-      // 7) SportMonks football scores
+      // 8) SportMonks football scores
       if (!found && tip.type.startsWith('soccer_')) {
         found = await checkSportMonksResult(tip, home, away, now);
       }
