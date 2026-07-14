@@ -471,6 +471,28 @@
 
 
 
+<!-- CHATBOT -->
+<div class="chatbot-fab" id="chatFab" onclick="toggleChat()" aria-label="Chat with us">
+  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+  <div class="chatbot-fab-badge" id="chatBadge" style="display:none;">1</div>
+</div>
+<div class="chatbot-window" id="chatWindow">
+  <div class="chatbot-header">
+    <div class="chatbot-header-info">
+      <div class="chatbot-avatar">🤖</div>
+      <div><div class="chatbot-name">MJK Assistant</div><div class="chatbot-status">Online · Instant replies</div></div>
+    </div>
+    <button class="chatbot-close" onclick="toggleChat()" aria-label="Close chat">✕</button>
+  </div>
+  <div class="chatbot-messages" id="chatMessages"></div>
+  <div class="chatbot-input-row">
+    <input type="text" id="chatInput" class="chatbot-input" placeholder="Ask about plans, sports, payments..." autocomplete="off" aria-label="Type a message">
+    <button class="chatbot-send" onclick="sendChatMessage()" aria-label="Send">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </div>
+</div>
+
 <script src="app.js?v=20260714b"></script>
 <script>
 if ('serviceWorker' in navigator) {

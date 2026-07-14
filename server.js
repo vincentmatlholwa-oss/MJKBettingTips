@@ -1235,83 +1235,162 @@ function scoreMarket(aiProb, bestOdds, agreement) {
 
 // === HUMAN-READABLE AI REASONING ===
 function buildTipReason(ctx) {
-  // ctx: { marketType, market, pick, home, away, poisson, eloH, eloA, hForm, aForm, bsdPred, afPred, ensembleResult, bttsProb, ouOver, ouUnder, expectedTotal, bestMarketScore }
   var lines = [];
   var home = ctx.home, away = ctx.away;
   var pick = ctx.pick || '';
+  var sportKey = ctx.sportKey || ctx.type || '';
 
-  if (ctx.marketType === 'h2h') {
-    // Match Result reasoning
-    var eloDiff = (ctx.eloH || 1500) - (ctx.eloA || 1500);
-    var eloFav = eloDiff > 0 ? home : away;
-    var eloAbs = Math.abs(Math.round(eloDiff));
+  var isSoccer = sportKey.indexOf('soccer') >= 0;
+  var isTennis = sportKey.indexOf('tennis') >= 0;
+  var isNFL = sportKey.indexOf('americanfootball') >= 0;
+  var isNRL = sportKey.indexOf('rugbyleague') >= 0;
+  var isAFL = sportKey.indexOf('aussierules') >= 0;
+  var isCricket = sportKey.indexOf('cricket') >= 0;
+  var isMMA = sportKey.indexOf('mma') >= 0;
+  var isMLB = sportKey.indexOf('baseball') >= 0;
+  var isDarts = sportKey.indexOf('darts') >= 0;
+
+  // ELO-based strength
+  var eloDiff = (ctx.eloH || 1500) - (ctx.eloA || 1500);
+  var eloFav = eloDiff > 0 ? home : away;
+  var eloAbs = Math.abs(Math.round(eloDiff));
+  if (isTennis) {
+    if (eloAbs > 150) lines.push(eloFav + ' ranked significantly higher');
+    else if (eloAbs > 80) lines.push(eloFav + ' has a slight ranking edge');
+    else lines.push('Both players closely matched');
+  } else if (isMMA) {
+    if (eloAbs > 150) lines.push(eloFav + ' is the clear favourite by our model');
+    else if (eloAbs > 80) lines.push(eloFav + ' has a slight edge in skill rating');
+    else lines.push('Both fighters are evenly matched');
+  } else if (isNFL || isNRL || isAFL) {
+    if (eloAbs > 150) lines.push(eloFav + ' rated as the significantly stronger team');
+    else if (eloAbs > 80) lines.push(eloFav + ' has a slight team strength advantage');
+    else lines.push('Teams are closely matched on strength');
+  } else if (isCricket) {
+    if (eloAbs > 150) lines.push(eloFav + ' rated as the stronger side');
+    else if (eloAbs > 80) lines.push(eloFav + ' has a slight edge');
+    else lines.push('Both sides evenly matched');
+  } else if (isMLB) {
+    if (eloAbs > 150) lines.push(eloFav + ' rated as the stronger team');
+    else if (eloAbs > 80) lines.push(eloFav + ' has a slight edge on form');
+    else lines.push('Teams are closely matched');
+  } else if (isDarts) {
+    if (eloAbs > 150) lines.push(eloFav + ' has the superior form');
+    else if (eloAbs > 80) lines.push(eloFav + ' slight edge in recent form');
+    else lines.push('Both players in similar form');
+  } else {
+    // Soccer default
     if (eloAbs > 150) lines.push(eloFav + ' rated significantly stronger (ELO gap ' + eloAbs + ')');
     else if (eloAbs > 80) lines.push(eloFav + ' slight ELO advantage (+' + eloAbs + ')');
     else lines.push('Teams closely matched on ELO');
-    if (ctx.poisson) {
-      var xgDiff = ctx.poisson.expectedHomeGoals - ctx.poisson.expectedAwayGoals;
+  }
+
+  // Poisson / expected scoring
+  if (ctx.poisson) {
+    var expH = ctx.poisson.expectedHomeGoals;
+    var expA = ctx.poisson.expectedAwayGoals;
+    if (isSoccer) {
+      var xgDiff = expH - expA;
       if (Math.abs(xgDiff) > 0.4) {
         var xgFav = xgDiff > 0 ? home : away;
-        lines.push('xG model expects ' + xgFav + ' to score more (' + ctx.poisson.expectedHomeGoals.toFixed(1) + ' vs ' + ctx.poisson.expectedAwayGoals.toFixed(1) + ')');
+        lines.push('Stats model expects ' + xgFav + ' to find the net more (' + expH.toFixed(1) + ' vs ' + expA.toFixed(1) + ' xG)');
       } else {
-        lines.push('Expected goals close (' + ctx.poisson.expectedHomeGoals.toFixed(1) + ' vs ' + ctx.poisson.expectedAwayGoals.toFixed(1) + ')');
+        lines.push('Expected goals tight (' + expH.toFixed(1) + ' vs ' + expA.toFixed(1) + ')');
       }
     }
-    if (ctx.hForm && ctx.aForm) {
+  }
+
+  // Form / recent results
+  if (ctx.hForm && ctx.aForm) {
+    if (isTennis) {
+      var hW = ctx.hForm.wins || 0, aW = ctx.aForm.wins || 0;
+      var hL = ctx.hForm.losses || 0, aL = ctx.aForm.losses || 0;
+      if (hW > aW + 2) lines.push(home + ' in stronger form lately (' + hW + 'W-' + hL + 'L vs ' + aW + 'W-' + aL + 'L)');
+      else if (aW > hW + 2) lines.push(away + ' in stronger form lately (' + aW + 'W-' + aL + 'L vs ' + hW + 'W-' + hL + 'L)');
+    } else if (isMMA) {
+      var hW = ctx.hForm.wins || 0, aW = ctx.aForm.wins || 0;
+      var hL = ctx.hForm.losses || 0, aL = ctx.aForm.losses || 0;
+      if (hW > aW + 1) lines.push(home + ' on a better run (' + hW + 'W-' + hL + 'L vs ' + aW + 'W-' + aL + 'L)');
+      else if (aW > hW + 1) lines.push(away + ' on a better run (' + aW + 'W-' + aL + 'L vs ' + hW + 'W-' + hL + 'L)');
+    } else if (isNFL || isNRL || isAFL || isMLB) {
+      var hPts = ctx.hForm.wins * 3 + ctx.hForm.draws;
+      var aPts = ctx.aForm.wins * 3 + ctx.aForm.draws;
+      if (hPts > aPts + 3) lines.push(home + ' in stronger form (' + ctx.hForm.wins + 'W-' + ctx.hForm.losses + 'L vs ' + ctx.aForm.wins + 'W-' + ctx.aForm.losses + 'L)');
+      else if (aPts > hPts + 3) lines.push(away + ' in stronger form (' + ctx.aForm.wins + 'W-' + ctx.aForm.losses + 'L vs ' + ctx.hForm.wins + 'W-' + ctx.hForm.losses + 'L)');
+    } else {
+      // Soccer
       var hPts = ctx.hForm.wins * 3 + ctx.hForm.draws;
       var aPts = ctx.aForm.wins * 3 + ctx.aForm.draws;
       if (hPts > aPts + 3) lines.push(home + ' in stronger form (' + ctx.hForm.wins + 'W-' + ctx.hForm.losses + 'L vs ' + ctx.aForm.wins + 'W-' + ctx.aForm.losses + 'L)');
       else if (aPts > hPts + 3) lines.push(away + ' in stronger form (' + ctx.aForm.wins + 'W-' + ctx.aForm.losses + 'L vs ' + ctx.hForm.wins + 'W-' + ctx.hForm.losses + 'L)');
     }
-    if (ctx.h2hTotal && ctx.h2hTotal >= 3) {
+  }
+
+  // H2H
+  if (ctx.h2hTotal && ctx.h2hTotal >= 3) {
+    if (isTennis || isMMA) {
+      if (ctx.h2hHomeWins > 0.6) lines.push(home + ' leads the head-to-head record');
+      else if (ctx.h2hHomeWins < 0.35) lines.push(away + ' leads the head-to-head record');
+    } else {
       if (ctx.h2hHomeWins > 0.55) lines.push(home + ' dominant in H2H (' + Math.round(ctx.h2hHomeWins * 100) + '% win rate in ' + ctx.h2hTotal + ' meetings)');
       else if (ctx.h2hHomeWins < 0.3) lines.push(away + ' dominant in H2H (' + Math.round((1 - ctx.h2hHomeWins) * 100) + '% win rate)');
     }
   }
-  else if (ctx.marketType === 'ou') {
-    // Over/Under reasoning
+
+  // Over/Under reasoning
+  if (ctx.marketType === 'ou') {
     var expTotal = ctx.expectedTotal || (ctx.poisson ? ctx.poisson.expectedHomeGoals + ctx.poisson.expectedAwayGoals : 0);
     var line = ctx.marketLine || 2.5;
-    if (expTotal > line + 0.5) lines.push('Expected goals (' + expTotal.toFixed(1) + ') comfortably above ' + line + ' line');
-    else if (expTotal > line + 0.2) lines.push('Expected goals (' + expTotal.toFixed(1) + ') slightly above ' + line + ' line');
-    else if (expTotal < line - 0.5) lines.push('Expected goals (' + expTotal.toFixed(1) + ') well below ' + line + ' line');
-    else lines.push('Expected goals (' + expTotal.toFixed(1) + ') close to ' + line + ' line');
-    if (ctx.poisson) {
-      if (ctx.poisson.expectedHomeGoals > 1.4 || ctx.poisson.expectedAwayGoals > 1.4) {
-        var highScorer = ctx.poisson.expectedHomeGoals > ctx.poisson.expectedAwayGoals ? home : away;
-        lines.push(highScorer + ' strong attacking threat (xG ' + Math.max(ctx.poisson.expectedHomeGoals, ctx.poisson.expectedAwayGoals).toFixed(1) + ')');
-      }
+    if (isSoccer) {
+      if (expTotal > line + 0.5) lines.push('Expected total goals (' + expTotal.toFixed(1) + ') well above ' + line + ' line');
+      else if (expTotal > line + 0.2) lines.push('Expected goals (' + expTotal.toFixed(1) + ') just above ' + line + ' line');
+      else if (expTotal < line - 0.5) lines.push('Expected goals (' + expTotal.toFixed(1) + ') well below ' + line + ' line — low-scoring likely');
+      else lines.push('Expected goals (' + expTotal.toFixed(1) + ') close to ' + line + ' line');
+      if (pick.indexOf('Over') !== -1 && expTotal > 2.8) lines.push('High-scoring affair expected');
+      else if (pick.indexOf('Under') !== -1 && expTotal < 2.2) lines.push('Defensive battle anticipated');
+    } else {
+      if (expTotal > line + 0.5) lines.push('Expected total (' + expTotal.toFixed(1) + ') above the ' + line + ' line');
+      else if (expTotal < line - 0.5) lines.push('Expected total (' + expTotal.toFixed(1) + ') below the ' + line + ' line');
+      else lines.push('Total points close to the ' + line + ' line');
     }
-    if (pick.indexOf('Over') !== -1 && expTotal > 2.8) lines.push('High-scoring affair expected');
-    else if (pick.indexOf('Under') !== -1 && expTotal < 2.2) lines.push('Defensive battle anticipated');
   }
-  else if (ctx.marketType === 'btts') {
-    // BTTS reasoning
-    if (ctx.poisson) {
+
+  // BTTS reasoning
+  if (ctx.marketType === 'btts') {
+    if (isSoccer && ctx.poisson) {
       var homeScoreProb = 1 - Math.exp(-ctx.poisson.expectedHomeGoals);
       var awayScoreProb = 1 - Math.exp(-ctx.poisson.expectedAwayGoals);
-      if (homeScoreProb > 0.6 && awayScoreProb > 0.6) lines.push('Both teams have >' + Math.round(Math.min(homeScoreProb, awayScoreProb) * 100) + '% chance of scoring');
-      else if (homeScoreProb > 0.55) lines.push(home + ' likely to score (' + Math.round(homeScoreProb * 100) + '%), ' + away + ' has scoring threat (' + Math.round(awayScoreProb * 100) + '%)');
+      if (homeScoreProb > 0.6 && awayScoreProb > 0.6) lines.push('Both teams have strong chances of scoring');
       if (ctx.poisson.expectedHomeGoals > 1.3 && ctx.poisson.expectedAwayGoals > 1.1) lines.push('Both attacks firing — high BTTS probability');
     }
     if (pick === 'No') lines.push('At least one team unlikely to find the net');
   }
-  else if (ctx.marketType === 'corner') {
-    // Corner reasoning
+
+  // Corner reasoning
+  if (ctx.marketType === 'corner') {
     if (ctx.expectedTotal > 10.5) lines.push('Expected corners above average (' + ctx.expectedTotal.toFixed(1) + ')');
     else if (ctx.expectedTotal < 9) lines.push('Expected corners below average (' + ctx.expectedTotal.toFixed(1) + ')');
   }
 
-  // AI agreement tag
+  // AI agreement — always add
   if (ctx.ensembleResult) {
-    if (ctx.ensembleResult.unanimous) lines.push('All 3 AI models agree');
-    else if (ctx.ensembleResult.agree) lines.push('Majority of AI models agree');
+    if (ctx.ensembleResult.unanimous) lines.push('All 3 AI models unanimously agree');
+    else if (ctx.ensembleResult.agree) lines.push('Majority of our AI models agree on this pick');
   }
 
-  // Value bet note
-  if (ctx.valueEdge && ctx.valueEdge > 0.08) lines.push('Value detected: AI prob ' + Math.round(ctx.valueEdge * 100) + '% above implied odds');
+  // Value bet
+  if (ctx.valueEdge && ctx.valueEdge > 0.08) lines.push('Value detected — AI probability ' + Math.round(ctx.valueEdge * 100) + '% higher than the odds suggest');
 
-  if (lines.length === 0) lines.push('Model analysis across Poisson, ELO, and market data');
+  // Fallback
+  if (lines.length === 0) {
+    if (isTennis) lines.push('Based on player rankings, recent form, and model analysis');
+    else if (isMMA) lines.push('Based on fighter stats, recent performances, and model analysis');
+    else if (isNFL || isNRL || isAFL) lines.push('Based on team form, strength ratings, and model analysis');
+    else if (isCricket) lines.push('Based on team form, player stats, and model analysis');
+    else if (isMLB) lines.push('Based on team form, pitching stats, and model analysis');
+    else if (isDarts) lines.push('Based on player form, averages, and model analysis');
+    else lines.push('Based on team form, stats, and AI model analysis');
+  }
   return lines.join('. ') + '.';
 }
 
@@ -3358,14 +3437,13 @@ async function handleTelegramUpdate(update) {
         var name = user.first_name || user.username || 'there';
         await sendTelegram(chatId,
           '👋 Welcome <b>' + name + '</b> to MJK Betting Tips!\n\n' +
-          '🏆 South Africa\'s most trusted betting community\n\n' +
+          '🏆 South Africa\'s most trusted AI-powered betting community\n\n' +
           'Get started:\n' +
           '• /tips — Today\'s free tips\n' +
           '• /bankers — Highest confidence picks\n' +
           '• /help — All commands\n\n' +
           '📊 We use AI-powered analysis across soccer, tennis, cricket, horse racing & more.\n\n' +
-          '🔗 <b>Upgrade for full access:</b>\n' +
-          't.me/MJKBettingTips for Pro & Elite plans!'
+          telegramAdFooter()
         );
       }
     }
@@ -3494,7 +3572,8 @@ async function handleTelegramUpdate(update) {
       '   Sports: soccer, tennis, nfl, nrl, mlb, afl, cricket\n' +
       '/stats — Overall win rate\n' +
       '/results — Recent results\n\n' +
-      'Natural language: just type "tips", "bankers", "today", or a sport name.'
+      'Natural language: just type "tips", "bankers", "today", or a sport name.\n\n' +
+      telegramAdFooter()
     );
     return;
   }
@@ -3506,8 +3585,7 @@ async function handleTelegramUpdate(update) {
     if (tips.length === 0) { await sendTelegram(chatId, 'No upcoming tips right now. Check back later!'); return; }
     var reply = '<b>MJK Tips — ' + (isGroup ? 'Free ' + tips.length : 'Top ' + tips.length) + '</b>\n\n';
     tips.forEach(function(t, i) { reply += formatTip(t, i + 1) + '\n\n'; });
-    if (!isGroup) reply += 'Confidence min 70% | AI-powered predictions';
-    else reply += 'Upgrade to Pro/Elite for full access';
+    reply += telegramAdFooter();
     await sendTelegram(chatId, reply);
     return;
   }
@@ -3518,7 +3596,7 @@ async function handleTelegramUpdate(update) {
     if (bankers.length === 0) { await sendTelegram(chatId, 'No bankers (80%+) available right now.'); return; }
     var reply = '<b>MJK Bankers — Highest Confidence</b>\n\n';
     bankers.forEach(function(t, i) { reply += formatTip(t, i + 1) + '\n\n'; });
-    reply += 'Bankers = 80%+ confidence';
+    reply += telegramAdFooter();
     await sendTelegram(chatId, reply);
     return;
   }
@@ -3536,7 +3614,7 @@ async function handleTelegramUpdate(update) {
       bySport[sport].forEach(function(t, i) { reply += formatTip(t, i + 1) + '\n'; });
       reply += '\n';
     }
-    if (isGroup) reply += 'Upgrade for full access — t.me/MJKBettingTips';
+    reply += telegramAdFooter();
     await sendTelegram(chatId, reply);
     return;
   }
@@ -3561,6 +3639,7 @@ async function handleTelegramUpdate(update) {
     if (tips.length === 0) { await sendTelegram(chatId, 'No upcoming tips found for "' + query + '".'); return; }
     var reply = '<b>MJK Tips — ' + tips[0].sport + '</b>\n\n';
     tips.forEach(function(t, i) { reply += formatTip(t, i + 1) + '\n\n'; });
+    reply += telegramAdFooter();
     await sendTelegram(chatId, reply);
     return;
   }
@@ -3580,7 +3659,8 @@ async function handleTelegramUpdate(update) {
       'Lost: ' + (total - won) + '\n' +
       'Win Rate: <b>' + rate + '%</b>\n' +
       'Pending: ' + pending + '\n' +
-      'Total Tips: ' + trackedTips.length
+      'Total Tips: ' + trackedTips.length + '\n\n' +
+      telegramAdFooter()
     );
     return;
   }
@@ -3595,6 +3675,7 @@ async function handleTelegramUpdate(update) {
       var icon = t.result === 'won' ? '✅' : '❌';
       reply += icon + ' ' + t.match + '\n   ' + t.pick + ' @ ' + t.odds + ' (' + t.conf + '%)\n\n';
     });
+    reply += telegramAdFooter();
     await sendTelegram(chatId, reply);
     return;
   }
@@ -3642,7 +3723,7 @@ function startTelegramBot() {
 // === API ROUTES ===
 
 // Auth (rate limited: 10 requests per 15 min per IP)
-app.post('/api/auth/register', rateLimit(15 * 60 * 1000, 10), function(req, res) {
+app.post('/api/auth/register', rateLimit(15 * 60 * 1000, 20), function(req, res) {
   var username = sanitizeInput(req.body.username);
   var password = req.body.password || '';
   if (!USERNAME_REGEX.test(username)) return res.status(400).json({ error: 'Username must be 3-20 alphanumeric characters or underscores' });
@@ -3673,7 +3754,7 @@ app.get('/api/auth/me', authMiddleware, function(req, res) {
 
 // Admin endpoints
 // Tips (with tier-based limits)
-app.get('/api/tips', rateLimit(30000, 30), function(req, res) {
+app.get('/api/tips', rateLimit(30000, 60), function(req, res) {
   var tipCount = cachedTips.length;
   var tips = cachedTips;
   var header = req.headers.authorization;
@@ -3890,7 +3971,7 @@ app.get('/api/premium/bankers', authMiddleware, function(req, res) {
 });
 
 // Banker results (historical performance of high-confidence tips)
-app.get('/api/banker-results', rateLimit(60000, 10), function(req, res) {
+app.get('/api/banker-results', rateLimit(60000, 30), function(req, res) {
   var minConf = parseInt(req.query.minConf) || 80;
   var bankers = trackedTips.filter(function(t) {
     return t.conf >= minConf && (t.result === 'won' || t.result === 'lost');
@@ -4025,7 +4106,7 @@ var visitors = [];
 try { visitors = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'visitors.json'), 'utf8')); } catch (e) { visitors = []; }
 function saveVisitors() { try { fs.writeFileSync(path.join(DATA_DIR, 'visitors.json'), JSON.stringify(visitors, null, 2)); } catch (e) {} }
 
-app.post('/api/track', rateLimit(60000, 5), function(req, res) {
+app.post('/api/track', rateLimit(60000, 30), function(req, res) {
   var ua = req.headers['user-agent'] || '';
   var ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress || '';
   if (ip.indexOf(',') >= 0) ip = ip.split(',')[0].trim();
@@ -4125,7 +4206,7 @@ app.get('/api/history', rateLimit(60000, 15), function(req, res) {
   res.json({ count: completed.length, tips: completed.slice(0, 100), bySport: Object.values(bySport) });
 });
 
-app.post('/api/check-results', rateLimit(60000, 5), async function(req, res) {
+app.post('/api/check-results', rateLimit(60000, 10), async function(req, res) {
   try {
     await checkResults();
     loadTrackedTips();
@@ -4325,8 +4406,21 @@ function formatTelegramGroupMsg(tips) {
     }
     msg += '\n';
   }
-  msg += '<b>Triple AI Ensemble</b> · Our AI + BSD CatBoost + API-Football\nAll 3 models agree on these picks\nUpgrade to Pro/Elite for full access — /tips for more';
+  msg += telegramAdFooter();
   return msg;
+}
+
+function telegramAdFooter() {
+  return '\n— — — — — — — — — —\n' +
+    '🎯 <b>Get MORE winning tips!</b>\n\n' +
+    '📱 <b>MJK Betting Tips App</b>\n' +
+    '⭐ Starter: R150/week — 10 tips/day\n' +
+    '💎 Pro: R400/week — 25 tips + horse racing + acca builder\n' +
+    '👑 Elite: R800/month — 30 tips + everything\n\n' +
+    '🌐 Website: <a href="https://mjkbettingtips.onrender.com">mjkbettingtips.onrender.com</a>\n' +
+    '📣 Telegram: <a href="https://t.me/MJKBettingTips">t.me/MJKBettingTips</a>\n' +
+    '💬 WhatsApp: <a href="https://wa.me/2767834591">067 783 4591</a>\n\n' +
+    '🤖 AI-powered • 3-model ensemble • Confidence 65%+';
 }
 
 function formatTipsForWhatsApp(tips) {
@@ -4365,7 +4459,16 @@ function formatTipsForWhatsApp(tips) {
     }
     msg += '\n';
   }
-  msg += 'AI-powered predictions | Confidence 65%+\nt.me/MJKBettingTips';
+  msg += 'AI-powered predictions | Confidence 65%+\n\n';
+  msg += '— — — — — — — — — —\n';
+  msg += '🎯 Get MORE winning tips!\n\n';
+  msg += '📱 MJK Betting Tips App\n';
+  msg += '⭐ Starter: R150/week — 10 tips/day\n';
+  msg += '💎 Pro: R400/week — 25 tips + horse racing + acca builder\n';
+  msg += '👑 Elite: R800/month — 30 tips + everything\n\n';
+  msg += '🌐 mjkbettingtips.onrender.com\n';
+  msg += '📣 t.me/MJKBettingTips\n';
+  msg += '💬 WhatsApp: 067 783 4591';
   return msg;
 }
 
@@ -4531,7 +4634,7 @@ app.get('/api/admin/whatsapp-link', authMiddleware, adminMiddleware, function(re
 });
 
 // === PUSH NOTIFICATION SUBSCRIPTIONS ===
-app.post('/api/push/subscribe', rateLimit(60 * 1000, 5), function(req, res) {
+app.post('/api/push/subscribe', rateLimit(60 * 1000, 10), function(req, res) {
   var sub = req.body;
   if (!sub || !sub.endpoint) return res.status(400).json({ error: 'Invalid subscription' });
   var subs = loadPushSubs();
