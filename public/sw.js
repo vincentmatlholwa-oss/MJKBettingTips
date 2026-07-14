@@ -1,4 +1,4 @@
-var CACHE_NAME = 'mjk-tips-v4';
+var CACHE_NAME = 'mjk-tips-v6';
 var PRECACHE_URLS = ['/', '/index.html', '/styles.css', '/app.js', '/logo.jpg', '/manifest.json'];
 
 self.addEventListener('install', function(e) {
@@ -8,12 +8,24 @@ self.addEventListener('install', function(e) {
 self.addEventListener('activate', function(e) {
   e.waitUntil(caches.keys().then(function(names) {
     return Promise.all(names.filter(function(n) { return n !== CACHE_NAME; }).map(function(n) { return caches.delete(n); }));
+  }).then(function() {
+    return self.clients.matchAll().then(function(clients) {
+      clients.forEach(function(client) { client.postMessage({ type: 'SW_UPDATED' }); });
+    });
   }).then(function() { return self.clients.claim(); }));
 });
 
 self.addEventListener('fetch', function(e) {
   if (e.request.url.indexOf('/api/') >= 0) {
     e.respondWith(fetch(e.request));
+  } else if (e.request.mode === 'navigate') {
+    e.respondWith(
+      fetch(e.request).then(function(resp) {
+        var clone = resp.clone();
+        caches.open(CACHE_NAME).then(function(c) { c.put(e.request, clone); });
+        return resp;
+      }).catch(function() { return caches.match(e.request).then(function(cached) { return cached || caches.match('/index.html'); }); })
+    );
   } else {
     e.respondWith(caches.match(e.request).then(function(cached) {
       return cached || fetch(e.request).then(function(resp) {
@@ -25,7 +37,12 @@ self.addEventListener('fetch', function(e) {
   }
 });
 
-// Push from browser Push API
+self.addEventListener('message', function(e) {
+  if (e.data && e.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
+
 self.addEventListener('push', function(e) {
   var data = e.data ? e.data.json() : { title: 'MJK Tips', body: 'New tips available!' };
   e.waitUntil(self.registration.showNotification(data.title, {

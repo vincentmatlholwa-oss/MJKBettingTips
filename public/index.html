@@ -447,12 +447,25 @@
 
 
 
-<script src="app.js"></script>
+<script src="app.js?v=20260714"></script>
 <script>
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').then(function(r) {
     console.log('[PWA] Service Worker registered');
+    r.addEventListener('updatefound', function() {
+      var newSW = r.installing;
+      if (newSW) newSW.addEventListener('statechange', function() {
+        if (newSW.state === 'installed' && navigator.serviceWorker.controller) {
+          newSW.postMessage({ type: 'SKIP_WAITING' });
+        }
+      });
+    });
   }).catch(function(e) { console.log('[PWA] SW error:', e); });
+  navigator.serviceWorker.addEventListener('message', function(e) {
+    if (e.data && e.data.type === 'SW_UPDATED') {
+      window.location.reload();
+    }
+  });
 }
 </script>
 </body>
