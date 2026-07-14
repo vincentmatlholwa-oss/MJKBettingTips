@@ -1336,31 +1336,183 @@ var WHATSAPP_LINK = 'https://wa.me/2767834591?text=' + encodeURIComponent('Hi MJ
 var TELEGRAM_LINK = 'https://t.me/MJKBettingTips';
 var SITE_URL = window.location.origin;
 
-var chatKnowledge = [
-  { keywords: ['hello', 'hi', 'hey', 'good morning', 'good evening', 'howzit', 'sawubona', 'molo'], response: 'Hey there! 👋 Welcome to MJK Betting Tips. I can help you with:\n\n• Plans & pricing\n• How the app works\n• Sports we cover\n• Payments & upgrades\n• Account help\n\nWhat would you like to know?' },
-  { keywords: ['plan', 'price', 'pricing', 'cost', 'how much', 'subscribe', 'subscription', 'package', 'tier', 'upgrade'], response: 'We have 3 paid plans + a free tier:\n\n🆓 *Free* — R0/forever\n3 tips/day, basic features\n\n⭐ *Starter* — R150/week\n10 tips/day, Telegram alerts, bankers\n\n💎 *Pro* — R400/week\n25 tips/day, horse racing, acca builder, ROI dashboard\n\n👑 *Elite* — R800/month\n30 tips/day, sport filtering, monthly reports, 1-on-1 coaching, early access\n\nWant to upgrade? Tap below 👇', quickReplies: ['How to pay?', 'How to register?'] },
-  { keywords: ['register', 'sign up', 'create account', 'join', 'create account', 'new account'], response: 'To register:\n\n1. Tap the *Register* button on the app\n2. Choose a username (3-20 characters)\n3. Create a password (8+ chars, uppercase + lowercase + number)\n\nOnce registered, you can upgrade to any paid plan from the *Premium* tab.', quickReplies: ['Plans & pricing', 'How to pay?'] },
-  { keywords: ['pay', 'payment', 'bank', 'eft', 'banking', 'deposit', 'transfer', 'how to pay'], response: 'To pay:\n\n1. Go to *Premium* tab → choose your plan\n2. Tap *Subscribe* — you\'ll see our banking details\n3. Copy the details and make an EFT payment\n4. Tap *Send Proof on WhatsApp* to send your proof\n5. Admin will activate your plan within 1 hour\n\n🏦 *Bank:* Tymebank\n📋 *Account:* 51135445245\n👤 *Holder:* Mojalefa Vincent Matlholwa\n🔢 *Branch:* 678910', quickReplies: ['What plans are there?', 'Contact admin'] },
-  { keywords: ['sport', 'sports', 'football', 'soccer', 'tennis', 'cricket', 'nfl', 'nrl', 'mlb', 'afl', 'horse', 'racing', 'mma', 'ufc', 'darts', 'which sports'], response: 'We cover ALL major sports:\n\n⚽ Football (EPL, La Liga, Champions League, MLS, etc.)\n🎾 Tennis (ATP, WTA)\n🏈 NFL\n🏉 NRL\n⚾ MLB\n🏏 Cricket (T20)\n🐎 Horse Racing\n🥊 MMA/UFC\n🎯 PDC Darts\n🏉 AFL\n\nOur AI analyzes all of them — 3 models must agree before a tip is posted!', quickReplies: ['How accurate?', 'Plans & pricing'] },
-  { keywords: ['accurate', 'accuracy', 'win rate', 'performance', 'results', 'how good', 'reliable', 'trust'], response: 'Our AI Ensemble uses 3 independent models:\n\n1. MJK AI (ELO + Poisson + form analysis)\n2. BSD CatBoost ML\n3. API-Football Poisson/statistics\n\nA tip is only posted when all 3 models *unanimously agree*. This means higher confidence but fewer tips.\n\nWe track all results publicly — check the *Results* tab for live win rates!', quickReplies: ['Sports covered', 'Plans & pricing'] },
-  { keywords: ['free', 'free tier', 'free plan', 'without paying'], response: 'The *Free* plan gives you:\n\n✅ 3 tips per day\n✅ 70%+ confidence filter\n✅ Basic match results\n✅ All sports (except horse racing)\n\nFor full access (25-30 tips, horse racing, acca builder, ROI dashboard), upgrade to Pro or Elite!', quickReplies: ['Plans & pricing', 'How to pay?'] },
-  { keywords: ['pro', 'pro plan', 'pro tier'], response: '💎 *Pro Plan* — R400/week\n\n✅ 25 tips daily\n✅ Horse racing tips\n✅ Acca builder\n✅ ROI dashboard\n✅ Accumulator tips\n✅ Correct score tips\n✅ All sports\n\nGreat value for serious bettors!', quickReplies: ['How to pay?', 'What is Elite?'] },
-  { keywords: ['elite', 'elite plan', 'elite tier', 'best plan', 'premium'], response: '👑 *Elite Plan* — R800/month\n\n✅ 30 tips daily\n✅ Horse racing tips\n✅ Sport filtering\n✅ Monthly reports\n✅ 1-on-1 coaching\n✅ Early access (6am SAST)\n✅ API access\n✅ Everything in Pro\n\nOur ultimate plan for maximum value!', quickReplies: ['How to pay?', 'What is Pro?'] },
-  { keywords: ['starter', 'starter plan', 'starter tier', 'basic plan', 'cheap plan'], response: '⭐ *Starter Plan* — R150/week\n\n✅ 10 tips daily\n✅ Telegram alerts\n✅ Daily banker picks\n✅ All sports (except horse racing)\n\nA great way to get started!', quickReplies: ['How to pay?', 'What is Pro?'] },
-  { keywords: ['telegram', 'tg', 'bot', 'chat bot'], response: 'Our Telegram bot gives you instant access to tips!\n\n🔗 Join: t.me/MJKBettingTips\n\nCommands:\n/tips — Today\'s free tips\n/bankers — Highest confidence picks\n/all — All upcoming tips\n/sport <name> — Filter by sport\n/results — Recent results\n/stats — Performance stats\n\nYou\'ll also get daily push notifications!', quickReplies: ['Plans & pricing', 'How accurate?'] },
-  { keywords: ['whatsapp', 'wa', 'contact', 'support', 'help', 'admin', 'talk to', 'speak to', 'human', 'real person', 'agent'], response: 'Need to talk to a real person? 👇\n\n📱 WhatsApp: 067 783 4591\n\nOr tap the button below to chat directly on WhatsApp:', quickReplies: ['Plans & pricing', 'How to pay?'] },
-  { keywords: ['account', 'password', 'login', 'forgot', 'lost password', 'can\'t login', 'change password'], response: 'Account help:\n\n🔐 *Forgot password?*\nTap "Forgot Password?" on the login screen → enter your username → get a reset token\n\n👤 *Can\'t login?*\nMake sure your username and password are correct. Passwords are case-sensitive.\n\nFor more help, contact us on WhatsApp:', quickReplies: ['Contact admin'] },
-  { keywords: ['app', 'website', 'link', 'url', 'download', 'install'], response: 'You can access MJK Tips from:\n\n🌐 Website: mjkbettingtips.onrender.com\n\n📱 Add to Home Screen for app-like experience:\n• iPhone: Tap Share → Add to Home Screen\n• Android: Tap menu → Add to Home Screen\n\nIt works like a native app — no download needed!', quickReplies: ['Plans & pricing', 'Sports covered'] },
-  { keywords: ['acca', 'accumulator', 'multi', 'combo', 'parlay'], response: 'Our *Acca Builder* lets you combine multiple tips into one accumulator bet!\n\nAvailable on *Pro* and *Elite* plans.\n\nFeatures:\n✅ Combine tips across sports\n✅ See combined odds instantly\n✅ Place via WhatsApp\n\nUpgrade to Pro to unlock this feature!', quickReplies: ['Plans & pricing', 'How to pay?'] },
-  { keywords: ['banker', 'bankers', 'high confidence', 'safe bet', 'sure bet', 'sure win'], response: 'Our *Bankers* are tips with 80%+ confidence — the picks our AI models are most certain about.\n\nAvailable on all plans, but *Pro* and *Elite* get more bankers including horse racing.\n\nCheck the *Bankers* tab in the app for today\'s top picks!', quickReplies: ['Plans & pricing', 'How accurate?'] },
-  { keywords: ['horse racing', 'horse', 'racing'], response: '🐎 *Horse Racing* is available on *Pro* (R400/wk) and *Elite* (R800/mo) plans.\n\nOur AI analyzes form guides, track conditions, and historical data to generate horse racing tips.\n\nUpgrade to Pro to unlock horse racing!', quickReplies: ['Plans & pricing', 'How to pay?'] },
-  { keywords: ['cancel', 'unsubscribe', 'stop', 'refund', 'money back'], response: 'To cancel or change your plan:\n\n📱 WhatsApp us at 067 783 4591\n\nWe handle all account changes manually to ensure quality service.\n\nNote: Weekly plans auto-expire at the end of the week. Monthly plans expire after 30 days.', quickReplies: ['Contact admin'] },
-  { keywords: ['tip', 'tips', 'prediction', 'pick', 'picks', 'bet', 'betting'], response: 'Our tips are AI-generated predictions based on:\n\n📊 ELO ratings\n📈 Form analysis\n🎯 Poisson statistical models\n🤖 CatBoost ML algorithms\n✅ 3-model consensus required\n\nAll tips include confidence %, odds, market type, and reasoning.', quickReplies: ['How accurate?', 'Sports covered'] },
-  { keywords: ['value', 'value bet', 'worth', 'worth it'], response: 'Value bets are tips where our AI finds odds that are higher than the true probability suggests.\n\nLook for the *VALUE* badge on tips in the app!\n\nAvailable across all sports on Pro and Elite plans.', quickReplies: ['How accurate?', 'Plans & pricing'] },
-  { keywords: ['good', 'nice', 'great', 'awesome', 'love', 'thanks', 'thank you', 'perfect'], response: 'Glad I could help! 😊\n\nEnjoy the tips and may your bets hit! 🎯\n\nAnything else you need?', quickReplies: ['Plans & pricing', 'Sports covered', 'Contact admin'] }
-];
+var chatState = { step: null, topic: null, data: {} };
 
-var chatFallback = 'I\'m not sure I understand that. Here are some things I can help with:\n\n• Plans & pricing\n• How to register\n• How to pay\n• Sports we cover\n• Account help\n• Contact support\n\nOr tap below to chat with our admin on WhatsApp 👇';
+var chatFlows = {
+  greeting: {
+    patterns: ['hello', 'hi', 'hey', 'good morning', 'good evening', 'good afternoon', 'howzit', 'sawubona', 'molo', 'yo', 'sup'],
+    reply: function() {
+      var hour = new Date().getHours();
+      var greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+      var name = (currentUser && currentUser.username) ? currentUser.username : 'there';
+      return { text: greeting + ', ' + name + '! 😊\n\nWelcome to MJK Betting Tips. I\'m here to help you get the most out of the app.\n\nWhat brings you here today?', quickReplies: ['Tell me about plans', 'How does it work?', 'I need help with my account', 'Just browsing'] };
+    }
+  },
+  plans_intro: {
+    patterns: ['plan', 'price', 'pricing', 'cost', 'how much', 'subscribe', 'subscription', 'package', 'tier', 'upgrade', 'tell me about plans', 'what plans'],
+    reply: function() {
+      return { text: 'Great question! We\'ve got something for everyone.\n\nLet me walk you through it 👇\n\n🆓 **Free** — R0/forever\n• 3 tips per day\n• All sports except horse racing\n• Great to test the waters!\n\n⭐ **Starter** — R150/week\n• 10 tips per day\n• Telegram alerts\n• Daily banker picks\n\n💎 **Pro** — R400/week\n• 25 tips per day\n• Horse racing + acca builder\n• ROI dashboard\n\n👑 **Elite** — R800/month\n• 30 tips per day + early access\n• Monthly reports & coaching\n• Everything included\n\nWhich one sounds right for you?', quickReplies: ['Starter details', 'Pro details', 'Elite details', 'Free plan details', 'How do I pay?'] };
+    }
+  },
+  plan_starter: {
+    patterns: ['starter', 'starter plan', 'starter details', 'cheapest', 'basic plan', 'affordable'],
+    reply: function() {
+      return { text: '⭐ **Starter — R150/week**\n\nThis is our most popular starter plan. Here\'s what you get:\n\n✅ 10 tips per day across all sports\n✅ Telegram alerts so you never miss a pick\n✅ Daily banker picks (high-confidence bets)\n\nPerfect if you\'re getting serious about betting but want to keep it affordable.\n\nWant to know how to get started?', quickReplies: ['How do I pay?', 'Compare plans', 'What sports are covered?'] };
+    }
+  },
+  plan_pro: {
+    patterns: ['pro', 'pro plan', 'pro details', 'pro tier'],
+    reply: function() {
+      return { text: '💎 **Pro — R400/week**\n\nThis is where it gets serious:\n\n✅ 25 tips per day\n✅ Horse racing tips 🐎\n✅ Acca builder — combine tips into accumulators\n✅ ROI dashboard — track your profits\n✅ All sports including correct scores\n\nMost of our serious bettors go with Pro.\n\nWant to sign up?', quickReplies: ['How do I pay?', 'What\'s the difference vs Elite?', 'What sports are covered?'] };
+    }
+  },
+  plan_elite: {
+    patterns: ['elite', 'elite plan', 'elite details', 'best plan', 'premium', 'ultimate'],
+    reply: function() {
+      return { text: '👑 **Elite — R800/month**\n\nOur ultimate plan — everything included:\n\n✅ 30 tips per day\n✅ Early access at 6am SAST (before everyone else)\n✅ Sport filtering — focus on your favourite sports\n✅ Monthly performance reports\n✅ 1-on-1 coaching sessions\n✅ API access for developers\n✅ Everything in Pro\n\nBest value for serious bettors who want the full experience.\n\nReady to upgrade?', quickReplies: ['How do I pay?', 'Compare plans', 'What\'s the difference vs Pro?'] };
+    }
+  },
+  plan_free: {
+    patterns: ['free', 'free plan', 'free tier', 'without paying', 'no cost', 'free details'],
+    reply: function() {
+      return { text: '🆓 **Free Plan — R0 forever**\n\nHere\'s what you get without spending a cent:\n\n✅ 3 tips per day\n✅ 70%+ confidence filter\n✅ All sports (except horse racing)\n✅ Basic match results\n\nIt\'s a great way to test our AI before going premium.\n\nWhen you\'re ready for more, upgrading is easy!', quickReplies: ['How do I upgrade?', 'Tell me about paid plans'] };
+    }
+  },
+  compare: {
+    patterns: ['compare', 'difference', 'which plan', 'best plan', 'recommend', 'which one', 'what should i pick'],
+    reply: function() {
+      return { text: 'Here\'s how the plans stack up:\n\n| Feature | Free | Starter | Pro | Elite |\n| Tips/day | 3 | 10 | 25 | 30 |\n| Price | R0 | R150/wk | R400/wk | R800/mo |\n| Telegram | ❌ | ✅ | ✅ | ✅ |\n| Horse Racing | ❌ | ❌ | ✅ | ✅ |\n| Acca Builder | ❌ | ❌ | ✅ | ✅ |\n| ROI Dashboard | ❌ | ❌ | ✅ | ✅ |\n| Monthly Reports | ❌ | ❌ | ❌ | ✅ |\n| Coaching | ❌ | ❌ | ❌ | ✅ |\n| Early Access | ❌ | ❌ | ❌ | ✅ |\n\nMy suggestion? Start with **Starter** if you\'re new, or go **Pro** if you want full power.', quickReplies: ['How do I pay?', 'Tell me more about Starter', 'Tell me more about Pro'] };
+    }
+  },
+  payment: {
+    patterns: ['pay', 'payment', 'bank', 'eft', 'banking', 'deposit', 'transfer', 'how to pay', 'how do i pay', 'how do i upgrade', 'upgrade'],
+    reply: function() {
+      return { text: 'Paying is simple — here\'s the step-by-step 👇\n\n**Step 1:** Go to the *Premium* tab in the app\n\n**Step 2:** Choose your plan and tap *Subscribe*\n\n**Step 3:** You\'ll see our banking details — copy them\n\n**Step 4:** Make an EFT payment from your bank\n\n**Step 5:** Tap *Send Proof on WhatsApp* to send us your proof of payment\n\n**Step 6:** We\'ll activate your plan within 1 hour!\n\n🏦 **Bank:** Tymebank\n📋 **Account:** 51135445245\n👤 **Holder:** Mojalefa Vincent Matlholwa\n🔢 **Branch:** 678910\n\nNeed help with any step?', quickReplies: ['I sent proof, what next?', 'Contact admin', 'Go back to plans'] };
+    }
+  },
+  payment_status: {
+    patterns: ['sent proof', 'what next', 'after payment', 'activated', 'waiting', 'pending', 'how long'],
+    reply: function() {
+      return { text: 'After you send your proof of payment on WhatsApp:\n\n1️⃣ Our admin verifies the payment\n2️⃣ Your plan gets activated\n3️⃣ You\'ll see your new tier in the app\n\nThis usually takes **less than 1 hour** during business hours.\n\nIf it\'s been longer, feel free to message us on WhatsApp to check!', quickReplies: ['Contact admin', 'How do I check my tier?', 'Go back to plans'] };
+    }
+  },
+  register: {
+    patterns: ['register', 'sign up', 'create account', 'join', 'new account', 'how to register', 'how do i register'],
+    reply: function() {
+      return { text: 'Signing up is quick! Here\'s how 👇\n\n**Step 1:** Tap the *Register* button on the login screen\n\n**Step 2:** Choose a username (3-20 characters, letters and underscores only)\n\n**Step 3:** Create a password — it needs:\n• At least 8 characters\n• One uppercase letter (A-Z)\n• One lowercase letter (a-z)\n• One number (0-9)\n\n**Step 4:** Tap *Register* and you\'re in!\n\nOnce registered, you can browse free tips immediately and upgrade anytime.', quickReplies: ['How do I pay?', 'Tell me about plans', 'I can\'t register'] };
+    }
+  },
+  register_issue: {
+    patterns: ['can\'t register', 'register not working', 'register error', 'signup error', 'sign up error'],
+    reply: function() {
+      return { text: 'Sorry to hear that! Here are the most common issues:\n\n🔐 **Password too short** — needs 8+ characters\n🔑 **Missing uppercase/lowercase/number** — make sure you have all three\n👤 **Username taken** — try a different one\n🌐 **Connection issue** — check your internet\n\nIf it still doesn\'t work, WhatsApp us and we\'ll sort it out for you.', quickReplies: ['Contact admin', 'Try again'] };
+    }
+  },
+  login_issue: {
+    patterns: ['can\'t login', 'login not working', 'forgot password', 'lost password', 'wrong password', 'login error', 'login issue', 'can\'t log in', 'password reset'],
+    reply: function() {
+      return { text: 'Let\'s get you back in! Here\'s what to try:\n\n**Forgot password?**\n1. Tap *Forgot Password?* on the login screen\n2. Enter your username\n3. You\'ll get a reset token\n4. Use it to set a new password\n\n**Still can\'t login?**\n• Check your username is spelled correctly\n• Passwords are case-sensitive — check caps lock\n• Try clearing your browser cache\n\nIf nothing works, WhatsApp us with your username and we\'ll fix it!', quickReplies: ['Contact admin', 'How do I register?'] };
+    }
+  },
+  sports: {
+    patterns: ['sport', 'sports', 'football', 'soccer', 'tennis', 'cricket', 'nfl', 'nrl', 'mlb', 'afl', 'horse', 'racing', 'mma', 'ufc', 'darts', 'which sports', 'what sports', 'covered'],
+    reply: function() {
+      return { text: 'We cover all the major sports! Here\'s the full list 👇\n\n⚽ **Football** — EPL, La Liga, Serie A, Champions League, MLS, and more\n🎾 **Tennis** — ATP, WTA, Grand Slams\n🏈 **NFL** — American football\n🏉 **NRL** — Rugby league\n⚾ **MLB** — Baseball\n🏏 **Cricket** — T20, ODIs, Tests\n🐎 **Horse Racing** — UK, SA, international\n🥊 **MMA/UFC** — UFC events\n🎯 **PDC Darts** — Professional darts\n🏉 **AFL** — Australian rules\n\nOur AI analyzes odds, form, and stats for each sport. Tips are only posted when 3 models agree!', quickReplies: ['How accurate are tips?', 'Plans & pricing', 'Which sport is best for betting?'] };
+    }
+  },
+  accuracy: {
+    patterns: ['accurate', 'accuracy', 'win rate', 'performance', 'results', 'how good', 'reliable', 'trust', 'does it work', 'proof'],
+    reply: function() {
+      return { text: 'Great question — here\'s how our AI works 🧠\n\nWe use **3 independent AI models**:\n\n1️⃣ **MJK AI** — ELO ratings + Poisson stats + form analysis\n2️⃣ **BSD CatBoost** — Machine learning on historical data\n3️⃣ **API-Football** — Poisson + statistical analysis\n\nA tip is only posted when **all 3 models unanimously agree**. This means fewer tips but much higher quality.\n\nYou can check live win rates in the *Results* tab — everything is tracked transparently!', quickReplies: ['What sports work best?', 'Plans & pricing', 'How do I pay?'] };
+    }
+  },
+  how_it_works: {
+    patterns: ['how does it work', 'how it works', 'explain', 'what is this', 'what do you do', 'tell me about', 'how does this app work'],
+    reply: function() {
+      return { text: 'Here\'s how MJK Betting Tips works 👇\n\n**1. Our AI generates tips**\nEvery day, our 3 AI models analyze upcoming matches across 10+ sports.\n\n**2. 3 models must agree**\nA tip only gets posted when all 3 models unanimously agree on the outcome. This filters out uncertain predictions.\n\n**3. You get notified**\nTips appear in the app and (on paid plans) via Telegram alerts.\n\n**4. You place your bet**\nEach tip includes the pick, odds, confidence %, and reasoning.\n\n**5. We track results**\nAll results are tracked automatically so you can see our live performance.\n\nWant to see it in action?', quickReplies: ['Try the free plan', 'Plans & pricing', 'How accurate are tips?'] };
+    }
+  },
+  account: {
+    patterns: ['account', 'password', 'login', 'forgot', 'lost password', 'can\'t login', 'change password', 'help with account', 'account help', 'my account'],
+    reply: function() {
+      return { text: 'I can help with account stuff! What\'s going on?\n\n• I forgot my password\n• I can\'t login\n• I want to change my password\n• I can\'t register\n\nPick one or describe your issue:', quickReplies: ['Forgot password', 'Can\'t login', 'Can\'t register'] };
+    }
+  },
+  cancel: {
+    patterns: ['cancel', 'unsubscribe', 'stop subscription', 'refund', 'money back', 'end subscription', 'downgrade'],
+    reply: function() {
+      return { text: 'No worries — here\'s how cancellation works:\n\n📅 **Auto-expiry**\n• Weekly plans (Starter/Pro) expire automatically after 7 days\n• Monthly plans (Elite) expire after 30 days\n• If you don\'t renew, you\'re back to Free\n\n📱 **Manual change**\nTo change or cancel your plan sooner, WhatsApp us at 067 783 4591\n\nWe handle all changes personally to make sure everything goes smoothly.', quickReplies: ['Contact admin', 'Tell me about plans'] };
+    }
+  },
+  app_usage: {
+    patterns: ['app', 'website', 'link', 'url', 'download', 'install', 'open', 'access', 'where is'],
+    reply: function() {
+      return { text: 'You can access MJK Tips from anywhere 🌍\n\n🌐 **Website:** mjkbettingtips.onrender.com\n\n📱 **Add to Home Screen (like an app):**\n\n*iPhone:*\n1. Open the site in Safari\n2. Tap the Share button\n3. Tap "Add to Home Screen"\n\n*Android:*\n1. Open the site in Chrome\n2. Tap the 3-dot menu\n3. Tap "Add to Home Screen"\n\nIt works just like a native app — no download needed!', quickReplies: ['Plans & pricing', 'Sports covered'] };
+    }
+  },
+  bankers: {
+    patterns: ['banker', 'bankers', 'high confidence', 'safe bet', 'sure bet', 'sure win', 'best pick'],
+    reply: function() {
+      return { text: 'Our **Bankers** are the picks our AI is most confident about — 80%+ confidence 🎯\n\nHere\'s what makes them special:\n\n✅ All 3 AI models must agree strongly\n✅ Higher confidence = higher win rate\n✅ Available for all sports\n\nYou\'ll find them in the *Bankers* tab in the app.\n\n**Pro** and **Elite** plans get extra bankers including horse racing!', quickReplies: ['How accurate are they?', 'Plans & pricing', 'How do I pay?'] };
+    }
+  },
+  acca: {
+    patterns: ['acca', 'accumulator', 'multi', 'combo', 'parlay', 'multiple'],
+    reply: function() {
+      return { text: 'Our **Acca Builder** lets you combine multiple tips into one accumulator bet! 🎰\n\nHow it works:\n\n1. Go to the *Acca Builder* tab\n2. Pick tips from different matches/sports\n3. See your combined odds instantly\n4. Place one bet with bigger potential returns!\n\nAvailable on **Pro** (R400/wk) and **Elite** (R800/mo) plans.', quickReplies: ['How do I upgrade to Pro?', 'How do I pay?'] };
+    }
+  },
+  horse: {
+    patterns: ['horse racing', 'horse', 'horse tips', 'racing tips'],
+    reply: function() {
+      return { text: '🐎 **Horse Racing** tips are available on our premium plans!\n\nOur AI analyzes:\n• Form guides\n• Track conditions\n• Jockey stats\n• Historical performance\n\nAvailable on **Pro** (R400/wk) and **Elite** (R800/mo).\n\nUpgrade to Pro to unlock horse racing!', quickReplies: ['How do I pay?', 'Tell me about Pro', 'Compare plans'] };
+    }
+  },
+  telegram: {
+    patterns: ['telegram', 'tg', 'telegram bot', 'telegram channel'],
+    reply: function() {
+      return { text: 'Our Telegram bot gives you instant access to tips! 📱\n\n🔗 **Join:** t.me/MJKBettingTips\n\nHere\'s what you can do:\n/tips — Today\'s free tips\n/bankers — Highest confidence picks\n/all — All upcoming tips\n/sport <name> — Filter by sport\n/results — Recent results\n/stats — Performance stats\n\nTelegram alerts are included on **Starter**, **Pro**, and **Elite** plans!', quickReplies: ['Plans & pricing', 'How do I pay?'] };
+    }
+  },
+  contact: {
+    patterns: ['whatsapp', 'wa', 'contact', 'support', 'help', 'admin', 'talk to', 'speak to', 'human', 'real person', 'agent', 'customer service'],
+    reply: function() {
+      return { text: 'I\'d love to help, but some things are best handled by our admin team 👇\n\n📱 **WhatsApp:** 067 783 4591\n\nThey can help with:\n• Payment verification\n• Account issues\n• Plan changes\n• Technical problems\n• Any other questions\n\nTap below to chat directly on WhatsApp:', quickReplies: ['Open WhatsApp', 'Go back to plans'] };
+    }
+  },
+  whatsapp_link: {
+    patterns: ['open whatsapp', 'whatsapp link', 'send whatsapp', 'chat on whatsapp'],
+    reply: function() {
+      var msg = encodeURIComponent('Hi! I need help with MJK Betting Tips.');
+      window.open('https://wa.me/27677834591?text=' + msg, '_blank');
+      return { text: 'Opening WhatsApp now! 💬\n\nOur admin will help you out. You can also reach us at:\n📱 067 783 4591', quickReplies: ['Go back to plans', 'Other questions'] };
+    }
+  },
+  value_bet: {
+    patterns: ['value', 'value bet', 'worth', 'worth it'],
+    reply: function() {
+      return { text: 'Value bets are where our AI spots odds that are **higher than they should be** based on the true probability 💡\n\nLook for the **VALUE** badge on tips in the app!\n\nThis means the bookmaker is offering better odds than the actual chance of winning — long-term, these are profitable.\n\nAvailable across all sports on all plans.', quickReplies: ['How accurate are tips?', 'Plans & pricing', 'How do I pay?'] };
+    }
+  },
+  thanks: {
+    patterns: ['good', 'nice', 'great', 'awesome', 'love it', 'thanks', 'thank you', 'perfect', 'cool', 'sweet', 'legit', 'dope'],
+    reply: function() {
+      return { text: 'Happy to help! 😊\n\nEnjoy the tips and may your bets hit! 🎯💪\n\nAnything else I can help with?', quickReplies: ['Tell me about plans', 'Sports covered', 'Contact admin'] };
+    }
+  },
+  not_sure: {
+    patterns: ['not sure', 'idk', 'don\'t know', 'just looking', 'browsing', 'curious', 'checking it out', 'tell me more'],
+    reply: function() {
+      return { text: 'No pressure at all! 😊\n\nHere\'s a quick overview:\n\n🎯 We use AI to generate betting tips across 10+ sports\n📊 3 models must agree before a tip is posted\n📈 You can track live results in the app\n\nThe best way to see if it works is to try the **Free** plan — 3 tips/day, no payment needed!\n\nWant to give it a go?', quickReplies: ['How do I register?', 'Tell me about plans', 'How does it work?'] };
+    }
+  }
+};
+
+var chatFallbackReplies = [
+  'Hmm, I\'m not quite sure about that one 🤔\n\nLet me connect you with our admin who can help!',
+  'That\'s a good question but I\'m not the best person for that.\n\nOur admin team on WhatsApp can sort you out!',
+  'I don\'t have the answer for that, but our admin team does! 👇'
+];
 
 function toggleChat() {
   var cw = document.getElementById('chatWindow');
@@ -1377,7 +1529,10 @@ function toggleChat() {
   }
 }
 function initChat() {
-  addChatMsg('bot', 'Hey! 👋 I\'m the MJK Assistant.\n\nI can help you with plans, payments, sports, and more. What are you interested in?', ['Plans & pricing', 'Sports covered', 'How to register']);
+  var hour = new Date().getHours();
+  var greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+  var name = (currentUser && currentUser.username) ? currentUser.username : 'there';
+  addChatMsg('bot', greeting + ', ' + name + '! 👋\n\nI\'m the MJK assistant — I can help you with plans, payments, sports, account stuff, and more.\n\nWhat brings you here today?', ['Tell me about plans', 'How does it work?', 'I need help with my account', 'Just browsing']);
 }
 function addChatMsg(type, text, quickReplies) {
   var container = document.getElementById('chatMessages');
@@ -1416,19 +1571,21 @@ function sendChatText(text) {
     var reply = getChatReply(text);
     addChatMsg('bot', reply.text, reply.quickReplies);
     chatHistory.push({ role: 'bot', text: reply.text });
-  }, 400 + Math.random() * 400);
+  }, 400 + Math.random() * 600);
 }
 function getChatReply(input) {
-  var lower = input.toLowerCase().replace(/[?!.,]/g, '');
-  for (var i = 0; i < chatKnowledge.length; i++) {
-    var entry = chatKnowledge[i];
-    for (var k = 0; k < entry.keywords.length; k++) {
-      if (lower.indexOf(entry.keywords[k]) >= 0) {
-        return { text: entry.response, quickReplies: entry.quickReplies || null };
+  var lower = input.toLowerCase().replace(/[?!.,]/g, '').trim();
+  for (var key in chatFlows) {
+    var flow = chatFlows[key];
+    for (var k = 0; k < flow.patterns.length; k++) {
+      if (lower.indexOf(flow.patterns[k]) >= 0 || lower === flow.patterns[k]) {
+        return flow.reply();
       }
     }
   }
-  return { text: chatFallback, quickReplies: ['Plans & pricing', 'Contact admin', 'Sports covered'] };
+  var fallbackText = chatFallbackReplies[Math.floor(Math.random() * chatFallbackReplies.length)];
+  var msg = encodeURIComponent('Hi! I need help with MJK Betting Tips.');
+  return { text: fallbackText + '\n\n📱 WhatsApp: 067 783 4591', quickReplies: ['Open WhatsApp', 'Go back to plans', 'Other questions'] };
 }
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Enter' && document.activeElement && document.activeElement.id === 'chatInput') {
