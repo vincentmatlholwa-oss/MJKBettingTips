@@ -1265,9 +1265,21 @@ function buildTipReason(ctx) {
     else if (eloAbs > 80) lines.push(eloFav + ' has a slight ranking edge');
     else lines.push('Both players closely matched');
   } else if (isMMA) {
-    if (eloAbs > 150) lines.push(eloFav + ' is the clear favourite by our model');
-    else if (eloAbs > 80) lines.push(eloFav + ' has a slight edge in skill rating');
-    else lines.push('Both fighters are evenly matched');
+    if (eloAbs > 150) lines.push(eloFav + ' enters as the clear favourite with a ' + eloAbs + '-point skill rating advantage');
+    else if (eloAbs > 80) lines.push(eloFav + ' holds a skill rating edge of +' + eloAbs);
+    else lines.push('Closely matched on paper — skill ratings within ' + eloAbs + ' points');
+    // MMA-specific: talk about odds and market confidence
+    if (ctx.pick && ctx.pick.indexOf(home) >= 0 && ctx.odds) {
+      var oddsNum = parseFloat(ctx.odds) || 0;
+      if (oddsNum > 0 && oddsNum < 1.30) lines.push('Bookmakers heavily favour ' + home + ' (odds ' + oddsNum.toFixed(2) + ')');
+      else if (oddsNum >= 1.30 && oddsNum < 2.00) lines.push(home + ' favoured at reasonable odds (' + oddsNum.toFixed(2) + ')');
+      else if (oddsNum >= 2.00) lines.push(home + ' undervalued by the market at ' + oddsNum.toFixed(2) + ' — potential value play');
+    } else if (ctx.pick && ctx.pick.indexOf(away) >= 0 && ctx.odds) {
+      var oddsNum = parseFloat(ctx.odds) || 0;
+      if (oddsNum > 0 && oddsNum < 1.30) lines.push('Bookmakers heavily favour ' + away + ' (odds ' + oddsNum.toFixed(2) + ')');
+      else if (oddsNum >= 1.30 && oddsNum < 2.00) lines.push(away + ' favoured at reasonable odds (' + oddsNum.toFixed(2) + ')');
+      else if (oddsNum >= 2.00) lines.push(away + ' undervalued by the market at ' + oddsNum.toFixed(2) + ' — potential value play');
+    }
   } else if (isNFL || isNRL || isAFL) {
     if (eloAbs > 150) lines.push(eloFav + ' rated as the significantly stronger team');
     else if (eloAbs > 80) lines.push(eloFav + ' has a slight team strength advantage');
@@ -1314,10 +1326,15 @@ function buildTipReason(ctx) {
       if (hW > aW + 2) lines.push(home + ' in stronger form lately (' + hW + 'W-' + hL + 'L vs ' + aW + 'W-' + aL + 'L)');
       else if (aW > hW + 2) lines.push(away + ' in stronger form lately (' + aW + 'W-' + aL + 'L vs ' + hW + 'W-' + hL + 'L)');
     } else if (isMMA) {
-      var hW = ctx.hForm.wins || 0, aW = ctx.aForm.wins || 0;
-      var hL = ctx.hForm.losses || 0, aL = ctx.aForm.losses || 0;
-      if (hW > aW + 1) lines.push(home + ' on a better run (' + hW + 'W-' + hL + 'L vs ' + aW + 'W-' + aL + 'L)');
-      else if (aW > hW + 1) lines.push(away + ' on a better run (' + aW + 'W-' + aL + 'L vs ' + hW + 'W-' + hL + 'L)');
+      var hW = ctx.hForm ? (ctx.hForm.wins || 0) : 0, aW = ctx.aForm ? (ctx.aForm.wins || 0) : 0;
+      var hL = ctx.hForm ? (ctx.hForm.losses || 0) : 0, aL = ctx.aForm ? (ctx.aForm.losses || 0) : 0;
+      var hStreak = ctx.hForm && ctx.hForm.streak ? ctx.hForm.streak : 0;
+      var aStreak = ctx.aForm && ctx.aForm.streak ? ctx.aForm.streak : 0;
+      if (hW > aW + 1 && hL < aL) lines.push(home + ' on a stronger run recently (' + hW + 'W-' + hL + 'L vs ' + aW + 'W-' + aL + 'L)');
+      else if (aW > hW + 1 && aL < hL) lines.push(away + ' on a stronger run recently (' + aW + 'W-' + aL + 'L vs ' + hW + 'W-' + hL + 'L)');
+      else if (hStreak >= 3) lines.push(home + ' riding a ' + hStreak + '-fight win streak');
+      else if (aStreak >= 3) lines.push(away + ' riding a ' + aStreak + '-fight win streak');
+      else if (hW > 0 || aW > 0) lines.push('Comparable recent records — both fighters have wins on their résumé');
     } else if (isNFL || isNRL || isAFL || isMLB) {
       var hPts = ctx.hForm.wins * 3 + ctx.hForm.draws;
       var aPts = ctx.aForm.wins * 3 + ctx.aForm.draws;
@@ -1380,16 +1397,26 @@ function buildTipReason(ctx) {
 
   // AI agreement — always add
   if (ctx.ensembleResult) {
-    if (ctx.ensembleResult.unanimous) lines.push('All 3 AI models unanimously agree');
-    else if (ctx.ensembleResult.agree) lines.push('Majority of our AI models agree on this pick');
+    if (isMMA) {
+      if (ctx.ensembleResult.unanimous) lines.push('Our 3 independent AI models all agree on this pick — strong conviction signal');
+      else if (ctx.ensembleResult.agree) lines.push('2 out of 3 AI models back this pick');
+      else lines.push('Mixed AI signals — approach with caution');
+    } else {
+      if (ctx.ensembleResult.unanimous) lines.push('All 3 AI models unanimously agree');
+      else if (ctx.ensembleResult.agree) lines.push('Majority of our AI models agree on this pick');
+    }
   }
 
   // Value bet
-  if (ctx.valueEdge && ctx.valueEdge > 0.08) lines.push('Value detected — AI probability ' + Math.round(ctx.valueEdge * 100) + '% higher than the odds suggest');
+  if (ctx.valueEdge && ctx.valueEdge > 0.08) {
+    if (isMMA) lines.push('Value spotted — our AI rates this fighter ' + Math.round(ctx.valueEdge * 100) + '% higher than the odds imply');
+    else lines.push('Value detected — AI probability ' + Math.round(ctx.valueEdge * 100) + '% higher than the odds suggest');
+  }
 
   // Fallback
   if (lines.length === 0) {
-    if (isTennis) lines.push('Based on player rankings, recent form, and model analysis');
+    if (isMMA) lines.push('Analysis based on fighter skill ratings, recent fight history, and betting market consensus');
+    else if (isTennis) lines.push('Based on player rankings, recent form, and model analysis');
     else if (isMMA) lines.push('Based on fighter stats, recent performances, and model analysis');
     else if (isNFL || isNRL || isAFL) lines.push('Based on team form, strength ratings, and model analysis');
     else if (isCricket) lines.push('Based on team form, player stats, and model analysis');
@@ -1864,6 +1891,7 @@ var ESPN_LEAGUE_MAP = {
   'tennis_wta_wimbledon': 'tennis/wta',
   'americanfootball_nfl': 'football/nfl',
   'baseball_mlb': 'baseball/mlb',
+  'mma_mixed_martial_arts': 'mma/ufc',
   'rugbyleague_nrl': '',
   'aussierules_afl': '',
   'cricket_international_t20': ''
@@ -1988,7 +2016,7 @@ var ESPN_SCOREBOARD_SLUGS = {
   'tennis_wta_wimbledon': 'tennis/wta',
   'americanfootball_nfl': 'football/nfl',
   'baseball_mlb': 'baseball/mlb',
-  'mma_mixed_martial_arts': 'mma'
+  'mma_mixed_martial_arts': 'mma/ufc'
 };
 var cachedESPNNonSoccer = {};
 async function fetchESPNNonSoccerFixtures() {
