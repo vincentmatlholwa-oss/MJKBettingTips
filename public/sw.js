@@ -1,4 +1,4 @@
-var CACHE_NAME = 'mjk-tips-v6';
+var CACHE_NAME = 'mjk-tips-v7';
 var PRECACHE_URLS = ['/', '/index.html', '/styles.css', '/app.js', '/logo.jpg', '/manifest.json'];
 
 self.addEventListener('install', function(e) {

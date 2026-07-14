@@ -254,9 +254,9 @@ function getCfg(key) { return SPORT_CONFIG[key] || { hasDraw: true, homeAdv: 1.1
 
 const TIERS = {
   free:  { name: 'Free', tipLimit: 3, earlyAccess: false, bankersOnly: false, sportFiltering: false, accaBuilder: false, roiDashboard: false, telegramAlerts: false, monthlyReport: false, horseRacing: false, apiAccess: false, price: 0 },
-  starter: { name: 'Starter', tipLimit: 10, earlyAccess: false, bankersOnly: false, sportFiltering: false, accaBuilder: false, roiDashboard: false, telegramAlerts: true, monthlyReport: false, horseRacing: false, apiAccess: false, price: 700 },
-  pro: { name: 'Pro', tipLimit: 25, earlyAccess: false, bankersOnly: false, sportFiltering: false, accaBuilder: true, roiDashboard: true, telegramAlerts: true, monthlyReport: false, horseRacing: true, apiAccess: false, price: 2500 },
-  elite: { name: 'Elite', tipLimit: 30, earlyAccess: true, bankersOnly: true, sportFiltering: true, accaBuilder: true, roiDashboard: true, telegramAlerts: true, monthlyReport: true, horseRacing: true, apiAccess: true, price: 6570 }
+  starter: { name: 'Starter', tipLimit: 10, earlyAccess: false, bankersOnly: false, sportFiltering: false, accaBuilder: false, roiDashboard: false, telegramAlerts: true, monthlyReport: false, horseRacing: false, apiAccess: false, price: 150 },
+  pro: { name: 'Pro', tipLimit: 25, earlyAccess: false, bankersOnly: false, sportFiltering: false, accaBuilder: true, roiDashboard: true, telegramAlerts: true, monthlyReport: false, horseRacing: true, apiAccess: false, price: 400 },
+  elite: { name: 'Elite', tipLimit: 30, earlyAccess: true, bankersOnly: true, sportFiltering: true, accaBuilder: true, roiDashboard: true, telegramAlerts: true, monthlyReport: true, horseRacing: true, apiAccess: true, price: 800 }
 };
 
 let teamRatings = {};
@@ -4018,6 +4018,72 @@ app.get('/api/v1/tips', function(req, res) {
   for (var u in keys) { if (keys[u] === key) { found = u; break; } }
   if (!found) return res.status(403).json({ error: 'Invalid API key' });
   res.json({ source: 'MJK Betting Tips API', count: cachedTips.length, tips: cachedTips });
+});
+
+// Visitor tracking
+var visitors = [];
+try { visitors = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'visitors.json'), 'utf8')); } catch (e) { visitors = []; }
+function saveVisitors() { try { fs.writeFileSync(path.join(DATA_DIR, 'visitors.json'), JSON.stringify(visitors, null, 2)); } catch (e) {} }
+
+app.post('/api/track', rateLimit(60000, 5), function(req, res) {
+  var ua = req.headers['user-agent'] || '';
+  var ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress || '';
+  if (ip.indexOf(',') >= 0) ip = ip.split(',')[0].trim();
+  if (ip === '::1' || ip === '127.0.0.1') ip = 'local';
+  var device = 'Unknown';
+  if (/Mobile|Android|iPhone|iPad|iPod/i.test(ua)) {
+    if (/iPad|iPod/i.test(ua)) device = 'Tablet';
+    else if (/iPhone/i.test(ua)) device = 'iPhone';
+    else if (/Android/i.test(ua)) device = 'Android';
+    else device = 'Mobile';
+  } else if (/Windows/i.test(ua)) device = 'Windows PC';
+  else if (/Macintosh|Mac OS X/i.test(ua)) device = 'Mac';
+  else if (/Linux/i.test(ua)) device = 'Linux';
+  var browser = 'Unknown';
+  if (/Chrome/i.test(ua) && !/Edge|OPR/i.test(ua)) browser = 'Chrome';
+  else if (/Firefox/i.test(ua)) browser = 'Firefox';
+  else if (/Safari/i.test(ua) && !/Chrome/i.test(ua)) browser = 'Safari';
+  else if (/Edge/i.test(ua)) browser = 'Edge';
+  else if (/OPR|Opera/i.test(ua)) browser = 'Opera';
+  var page = req.body.page || '/';
+  var existing = visitors.find(function(v) { return v.ip === ip; });
+  var entry = {
+    ip: ip,
+    device: device,
+    browser: browser,
+    ua: ua.slice(0, 200),
+    page: page,
+    lastSeen: new Date().toISOString(),
+    visits: existing ? existing.visits + 1 : 1,
+    username: (req.body.username || '').slice(0, 20),
+    firstSeen: existing ? existing.firstSeen : new Date().toISOString()
+  };
+  if (existing) {
+    Object.assign(existing, entry);
+  } else {
+    visitors.push(entry);
+  }
+  if (visitors.length % 10 === 0) saveVisitors();
+  res.json({ ok: true });
+});
+
+app.get('/api/admin/visitors', authMiddleware, adminMiddleware, function(req, res) {
+  saveVisitors();
+  var list = visitors.slice().sort(function(a, b) { return b.lastSeen.localeCompare(a.lastSeen); });
+  var unique = {};
+  var totalVisits = 0;
+  for (var i = 0; i < list.length; i++) {
+    totalVisits += list[i].visits;
+    var key = list[i].ip;
+    if (!unique[key]) unique[key] = list[i];
+  }
+  var devices = {};
+  var browsers = {};
+  for (var i = 0; i < list.length; i++) {
+    devices[list[i].device] = (devices[list[i].device] || 0) + 1;
+    browsers[list[i].browser] = (browsers[list[i].browser] || 0) + 1;
+  }
+  res.json({ visitors: list, uniqueCount: Object.keys(unique).length, totalVisits: totalVisits, devices: devices, browsers: browsers });
 });
 
 // Existing endpoints

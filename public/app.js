@@ -404,7 +404,7 @@ function showSection(name) {
   }
   if (name === 'dashboard') loadDashboard();
   if (name === 'api-keys') loadApiKey();
-  if (name === 'admin') { loadAdminUsers(); loadAdminStats(); loadBacktest(); }
+  if (name === 'admin') { loadAdminUsers(); loadAdminStats(); loadBacktest(); loadAdminVisitors(); }
   if (name === 'premium') loadPremiumContent();
 }
 
@@ -665,6 +665,45 @@ function loadAdminStats() {
     renderAdminCharts(d);
   }).catch(function() {});
 }
+
+// === VISITOR TRACKING ===
+function trackVisit() {
+  try {
+    var payload = { page: window.location.pathname + window.location.search };
+    if (currentUser && currentUser.username) payload.username = currentUser.username;
+    if (navigator.sendBeacon) {
+      var blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+      navigator.sendBeacon('/api/track', blob);
+    } else {
+      fetch('/api/track', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    }
+  } catch (e) {}
+}
+function loadAdminVisitors() {
+  apiGet('/api/admin/visitors').then(function(d) {
+    if (d.error) return;
+    var summary = document.getElementById('adminVisitorSummary');
+    var list = document.getElementById('adminVisitorList');
+    if (!summary || !list) return;
+    summary.innerHTML = '<div class="admin-stat-card"><div class="admin-stat-num">' + (d.uniqueCount || 0) + '</div><div class="admin-stat-label">Unique Visitors</div></div>' +
+      '<div class="admin-stat-card"><div class="admin-stat-num">' + (d.totalVisits || 0) + '</div><div class="admin-stat-label">Total Visits</div></div>';
+    var html = '<div class="visitor-devices-row">';
+    if (d.devices) { for (var dev in d.devices) html += '<span class="visitor-chip">' + dev + ': ' + d.devices[dev] + '</span>'; }
+    if (d.browsers) { for (var br in d.browsers) html += '<span class="visitor-chip">' + br + ': ' + d.browsers[br] + '</span>'; }
+    html += '</div>';
+    var visitors = d.visitors || [];
+    html += '<table class="visitor-table"><thead><tr><th>IP</th><th>Device</th><th>Browser</th><th>User</th><th>Visits</th><th>Last Seen</th></tr></thead><tbody>';
+    for (var i = 0; i < Math.min(visitors.length, 50); i++) {
+      var v = visitors[i];
+      var ts = v.lastSeen ? new Date(v.lastSeen).toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+      html += '<tr><td>' + (v.ip || '') + '</td><td>' + (v.device || '') + '</td><td>' + (v.browser || '') + '</td><td>' + (v.username || '-') + '</td><td>' + (v.visits || 1) + '</td><td>' + ts + '</td></tr>';
+    }
+    html += '</tbody></table>';
+    if (visitors.length === 0) html = '<div class="empty-state">No visitors yet</div>';
+    list.innerHTML = html;
+  }).catch(function() {});
+}
+
 function loadBacktest() {
   var el = document.getElementById('backtestPanel');
   if (el) el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);">Running backtest...</div>';
@@ -1055,9 +1094,9 @@ function renderTiers() {
   if (!grid || !TIERS.free) return;
   var plans = [
     { key:'free', name:'Free', price:'R0', period:'forever', what:'Basic app access', features:['3 tips daily','70%+ confidence filter','Basic match results'], btn:'Current Plan', featured:false },
-    { key:'starter', name:'Starter', price:'R700', period:'per week', what:'10 tips + Telegram alerts', features:['10 tips daily','Daily banker picks','Telegram alerts','All sports (exc. horse racing)'], btn:'Subscribe', featured:false },
-    { key:'pro', name:'Pro', price:'R2500', period:'per week', what:'25 tips + VIP tools + Horse Racing', features:['25 tips daily','Horse racing tips','Acca builder','ROI dashboard','Accumulator tips','Correct score tips'], btn:'Subscribe', featured:true },
-    { key:'elite', name:'Elite', price:'R6570', period:'per month', what:'30 tips + Horse Racing + everything', features:['30 tips daily','Horse racing tips','Sport filtering','Monthly reports','1-on-1 consultations','Early access 6am SAST'], btn:'Subscribe', featured:false }
+    { key:'starter', name:'Starter', price:'R150', period:'per week', what:'10 tips + Telegram alerts', features:['10 tips daily','Daily banker picks','Telegram alerts','All sports (exc. horse racing)'], btn:'Subscribe', featured:false },
+    { key:'pro', name:'Pro', price:'R400', period:'per week', what:'25 tips + VIP tools + Horse Racing', features:['25 tips daily','Horse racing tips','Acca builder','ROI dashboard','Accumulator tips','Correct score tips'], btn:'Subscribe', featured:true },
+    { key:'elite', name:'Elite', price:'R800', period:'per month', what:'30 tips + Horse Racing + everything', features:['30 tips daily','Horse racing tips','Sport filtering','Monthly reports','1-on-1 consultations','Early access 6am SAST'], btn:'Subscribe', featured:false }
   ];
   var html = '';
   for (var i = 0; i < plans.length; i++) {
@@ -1079,9 +1118,9 @@ function renderPremiumPlans() {
   if (!grid || !TIERS.free || !currentUser) return;
   if (currentUser.tier === 'elite') { grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1">You are on the Elite plan — all features unlocked.</div>'; return; }
   var plans = [
-    { key:'starter', name:'Starter', price:'R700', period:'per week', features:['10 tips daily','Telegram alerts','Daily banker picks'] },
-    { key:'pro', name:'Pro', price:'R2500', period:'per week', features:['25 tips daily','Horse racing tips','Acca builder','ROI dashboard','Correct score tips','Accumulators'] },
-    { key:'elite', name:'Elite', price:'R6570', period:'per month', features:['30 tips daily','Horse racing tips','Sport filtering','Monthly reports','1-on-1 coaching','Early access'] }
+    { key:'starter', name:'Starter', price:'R150', period:'per week', features:['10 tips daily','Telegram alerts','Daily banker picks'] },
+    { key:'pro', name:'Pro', price:'R400', period:'per week', features:['25 tips daily','Horse racing tips','Acca builder','ROI dashboard','Correct score tips','Accumulators'] },
+    { key:'elite', name:'Elite', price:'R800', period:'per month', features:['30 tips daily','Horse racing tips','Sport filtering','Monthly reports','1-on-1 coaching','Early access'] }
   ];
   var html = '';
   for (var i = 0; i < plans.length; i++) {
@@ -1102,13 +1141,28 @@ function openSubModal(plan, price, tierKey) {
   if (!m) return;
   if (!currentUser) { showAuthModal('login'); return; }
   m.classList.add('open');
-  document.getElementById('subTitle').textContent = plan + ' Plan — ' + price;
-  document.getElementById('subDesc').textContent = 'Contact us to activate your plan. Admin will upgrade within 1 hour of payment confirmation.';
+  document.getElementById('subTitle').textContent = plan + ' Plan';
+  document.getElementById('subDesc').textContent = 'Pay R' + price.replace(/[^0-9]/g,'') + (tierKey === 'elite' ? '/month' : '/week') + ' via EFT to the banking details below.';
+  document.getElementById('subAmount').textContent = price + ' ' + (tierKey === 'elite' ? '/month' : '/week');
+  var ref = document.getElementById('bankRef');
+  if (ref) ref.textContent = 'MJK ' + currentUser.username;
   var waLink = document.getElementById('subWaLink');
   if (waLink) {
-    waLink.style.display = 'flex';
-    waLink.href = 'https://wa.me/27677834591?text=' + encodeURIComponent('Hi MJK, I want to upgrade to the ' + plan + ' plan (' + price + '/week). My username is: ' + currentUser.username);
-    waLink.textContent = '💬 Chat on WhatsApp to Pay';
+    var amt = price.replace(/[^0-9]/g,'');
+    var msg = 'Hi MJK, I want to upgrade to the ' + plan + ' plan (R' + amt + (tierKey === 'elite' ? '/month' : '/week') + ').\n\nMy username: ' + currentUser.username + '\n\nI have made the EFT payment. Here is my proof of payment:';
+    waLink.href = 'https://wa.me/2767834591?text=' + encodeURIComponent(msg);
+  }
+}
+function copyBanking() {
+  var ref = document.getElementById('bankRef');
+  var refText = ref ? ref.textContent : 'MJK username';
+  var text = 'Bank: Tymebank\nAccount: 51135445245\nHolder: Mojalefa Vincent Matlholwa\nBranch: 678910\nReference: ' + refText;
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(function() { showToast('Banking details copied!', 'success'); });
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+    showToast('Banking details copied!', 'success');
   }
 }
 function closeSub() {
@@ -1215,6 +1269,7 @@ function boot() {
   fetchBankerResults();
   updateAuthUI();
   if (currentUser) startSessionTimer();
+  trackVisit();
 }
 
 var TIPS_INTERVAL = setInterval(function() {

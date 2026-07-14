@@ -344,6 +344,27 @@ input,select{font-family:inherit;}
 .auth-error{color:var(--red);font-size:12px;text-align:center;min-height:18px;}
 .auth-success{color:var(--green);font-size:12px;margin-bottom:8px;}
 
+/* === BANKING DETAILS === */
+.banking-box{background:var(--bg3);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:14px;}
+.banking-header{font-family:'Bebas Neue',sans-serif;font-size:15px;color:var(--cyan);margin-bottom:10px;letter-spacing:.5px;}
+.banking-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.05);}
+.banking-row:last-of-type{border-bottom:none;}
+.banking-label{font-size:12px;color:var(--muted);font-family:'Rajdhani',sans-serif;font-weight:600;}
+.banking-value{font-size:13px;color:var(--text);font-family:'Exo 2',sans-serif;font-weight:600;}
+.banking-mono{font-family:'Rajdhani',sans-serif;letter-spacing:1px;color:var(--cyan);}
+.btn-copy{margin-top:10px;width:100%;font-size:12px;padding:8px;}
+.btn-green-sub{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:14px;border-radius:12px;background:#25d366;color:#fff;font-family:'Exo 2',sans-serif;font-size:15px;font-weight:700;border:none;cursor:pointer;transition:all .2s;text-decoration:none;margin-top:6px;}
+.btn-green-sub:hover{background:#1da851;transform:translateY(-1px);text-decoration:none;color:#fff;}
+.sub-amount{font-family:'Bebas Neue',sans-serif;font-size:28px;text-align:center;background:linear-gradient(135deg,var(--blue),var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:10px;}
+
+/* === VISITOR TRACKING === */
+.visitor-devices-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;}
+.visitor-chip{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:4px 10px;font-size:11px;color:var(--text);font-family:'Rajdhani',sans-serif;font-weight:600;}
+.visitor-table{width:100%;border-collapse:collapse;font-size:12px;}
+.visitor-table th{text-align:left;padding:8px 6px;color:var(--muted);font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;border-bottom:1px solid var(--border);text-transform:uppercase;letter-spacing:.5px;}
+.visitor-table td{padding:6px;border-bottom:1px solid rgba(255,255,255,.04);color:var(--text);font-family:'Exo 2',sans-serif;font-size:12px;}
+.visitor-table tr:hover td{background:rgba(0,200,255,.04);}
+
 /* === TESTIMONIALS === */
 .testimonials-section{padding:40px 16px;background:var(--bg2);border-top:1px solid var(--border);border-bottom:1px solid var(--border);}
 .testimonials-inner{max-width:1000px;margin:0 auto;}
