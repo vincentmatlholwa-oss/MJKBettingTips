@@ -1755,33 +1755,174 @@ async function checkTennisResult(tip, home, away, now) {
   } catch (e) { return false; }
 }
 
+// === FREE WEB-BASED SCORE CHECKING (ESPN API — no API key needed) ===
+var ESPN_LEAGUE_MAP = {
+  'soccer_epl': 'eng.1',
+  'soccer_fifa_world_cup': 'fifa.world',
+  'soccer_england_championship': 'eng.2',
+  'soccer_spain_la_liga': 'esp.1',
+  'soccer_germany_bundesliga': 'ger.1',
+  'soccer_italy_serie_a': 'ita.1',
+  'soccer_france_ligue_one': 'fra.1',
+  'soccer_netherlands_eredivisie': 'ned.1',
+  'soccer_portugal_liga': 'por.1',
+  'soccer_brazil_serie_a': 'bra.1',
+  'soccer_usa_mls': 'usa.1',
+  'soccer_uefa_champs_league': 'uefa.champions',
+  'soccer_uefa_europa_league': 'uefa.europa',
+  'soccer_turkey_super_lig': 'tur.1',
+  'soccer_belgium_first_division_a': 'bel.1',
+  'soccer_scotland_premiership': 'sco.1',
+  'tennis_atp_wimbledon': 'tennis/atp',
+  'tennis_wta_wimbledon': 'tennis/wta',
+  'americanfootball_nfl': 'football/nfl',
+  'baseball_mlb': 'baseball/mlb',
+  'rugbyleague_nrl': '',
+  'aussierules_afl': '',
+  'cricket_international_t20': ''
+};
+
+var COMPETITION_CODE_MAP = {
+  'soccer_epl': 'PL',
+  'soccer_spain_la_liga': 'PD',
+  'soccer_italy_serie_a': 'SA',
+  'soccer_germany_bundesliga': 'BL1',
+  'soccer_france_ligue_one': 'FL1',
+  'soccer_uefa_champs_league': 'CL',
+  'soccer_netherlands_eredivisie': 'DED',
+  'soccer_portugal_liga': 'PPL',
+  'soccer_brazil_serie_a': 'BSA',
+  'soccer_scotland_premiership': 'SP1'
+};
+
+function espnDateStr(date) {
+  var d = new Date(date);
+  return d.getFullYear().toString() + (d.getMonth() + 1 < 10 ? '0' : '') + (d.getMonth() + 1) + (d.getDate() < 10 ? '0' : '') + d.getDate();
+}
+
+async function checkESPNResult(tip, home, away, now) {
+  var espnSlug = ESPN_LEAGUE_MAP[tip.type];
+  if (!espnSlug) return false;
+  try {
+    var tipKickoff = new Date(tip.kickoff);
+    var dates = [espnDateStr(tipKickoff)];
+    var nextDay = espnDateStr(new Date(tipKickoff.getTime() + 86400000));
+    var prevDay = espnDateStr(new Date(tipKickoff.getTime() - 86400000));
+    if (nextDay !== dates[0]) dates.push(nextDay);
+    if (prevDay !== dates[0]) dates.unshift(prevDay);
+    for (var di = 0; di < dates.length; di++) {
+      var url = 'https://site.api.espn.com/apis/site/v2/sports/' + espnSlug + '/scoreboard?dates=' + dates[di];
+      var espnRes = await safeFetch(url, { headers: { 'User-Agent': 'MJKTips/1.0' } }, 10000);
+      if (!espnRes.ok) continue;
+      var espnData = await espnRes.json();
+      if (!espnData.events) continue;
+      for (var ei = 0; ei < espnData.events.length; ei++) {
+        var ev = espnData.events[ei];
+        if (!ev.competitions || !ev.competitions[0]) continue;
+        var comp = ev.competitions[0];
+        if (!comp.competitors || comp.competitors.length < 2) continue;
+        if (!comp.status || !comp.status.type || !comp.status.type.completed) continue;
+        var c1 = comp.competitors[0], c2 = comp.competitors[1];
+        var n1 = (c1.team ? c1.team.displayName : '') || (c1.team ? c1.team.name : '') || '';
+        var n2 = (c2.team ? c2.team.displayName : '') || (c2.team ? c2.team.name : '') || '';
+        var nn1 = normalizeTeamName(n1).toLowerCase(), nn2 = normalizeTeamName(n2).toLowerCase();
+        var nh = normalizeTeamName(home).toLowerCase(), na = normalizeTeamName(away).toLowerCase();
+        var matchFound = false;
+        if ((nn1.indexOf(nh) >= 0 || nh.indexOf(nn1) >= 0) && (nn2.indexOf(na) >= 0 || na.indexOf(nn2) >= 0)) matchFound = true;
+        if ((nn1.indexOf(na) >= 0 || na.indexOf(nn1) >= 0) && (nn2.indexOf(nh) >= 0 || nh.indexOf(nn2) >= 0)) matchFound = true;
+        if (!matchFound) continue;
+        var homeScore = 0, awayScore = 0;
+        if ((nn1.indexOf(nh) >= 0 || nh.indexOf(nn1) >= 0)) {
+          homeScore = parseInt(c1.score || '0', 10); awayScore = parseInt(c2.score || '0', 10);
+        } else {
+          homeScore = parseInt(c2.score || '0', 10); awayScore = parseInt(c1.score || '0', 10);
+        }
+        if (homeScore === 0 && awayScore === 0 && !(c1.score === '0' || c2.score === '0')) continue;
+        applyResultToTip(tip, home, away, homeScore, awayScore, now);
+        console.log('[RESULTS] ESPN: ' + tip.match + ' → ' + (homeScore > awayScore ? home : homeScore < awayScore ? away : 'Draw') + ' ' + homeScore + '-' + awayScore);
+        return true;
+      }
+    }
+  } catch (e) {}
+  return false;
+}
+
+async function checkFBCompetitionResult(tip, home, away, now) {
+  var code = COMPETITION_CODE_MAP[tip.type];
+  if (!code || !FB_API_KEY) return false;
+  try {
+    var tipKickoff = new Date(tip.kickoff);
+    var dateFrom = new Date(tipKickoff.getTime() - 86400000).toISOString().split('T')[0];
+    var dateTo = new Date(now.getTime() + 86400000).toISOString().split('T')[0];
+    var url = FB_API_BASE + '/competitions/' + code + '/matches?dateFrom=' + dateFrom + '&dateTo=' + dateTo;
+    var res = await safeFetch(url, { headers: { 'X-Auth-Token': FB_API_KEY } }, 10000);
+    if (!res.ok) return false;
+    var data = await res.json();
+    if (!data.matches) return false;
+    var match = data.matches.find(function(m) {
+      return normalizeTeamName(m.homeTeam ? m.homeTeam.name : '') === normalizeTeamName(home) &&
+             normalizeTeamName(m.awayTeam ? m.awayTeam.name : '') === normalizeTeamName(away) &&
+             m.status === 'FINISHED' && m.score && m.score.fullTime &&
+             m.score.fullTime.home !== null && m.score.fullTime.away !== null;
+    });
+    if (!match) return false;
+    applyResultToTip(tip, home, away, match.score.fullTime.home, match.score.fullTime.away, now);
+    console.log('[RESULTS] FB-Data (' + code + '): ' + tip.match + ' → ' + match.score.fullTime.home + '-' + match.score.fullTime.away);
+    return true;
+  } catch (e) { return false; }
+}
+
+async function checkAPIFootballResult(tip, home, away, now) {
+  if (!APIFOOTBALL_KEY) return false;
+  try {
+    var tipKickoff = new Date(tip.kickoff);
+    var dateStr = tipKickoff.toISOString().split('T')[0];
+    var url = APIFOOTBALL_BASE + '/fixtures?date=' + dateStr;
+    var res = await safeFetch(url, { headers: { 'x-apisports-key': APIFOOTBALL_KEY } }, 10000);
+    if (!res.ok) return false;
+    var data = await res.json();
+    if (!data.response) return false;
+    var match = data.response.find(function(r) {
+      return r.fixture && r.fixture.status && r.fixture.status.short === 'FT' &&
+             normalizeTeamName(r.teams.home.name) === normalizeTeamName(home) &&
+             normalizeTeamName(r.teams.away.name) === normalizeTeamName(away) &&
+             r.goals.home !== null && r.goals.away !== null;
+    });
+    if (!match) return false;
+    applyResultToTip(tip, home, away, match.goals.home, match.goals.away, now);
+    console.log('[RESULTS] API-Football: ' + tip.match + ' → ' + match.goals.home + '-' + match.goals.away);
+    return true;
+  } catch (e) { return false; }
+}
+
 async function checkResults() {
   const now = new Date();
   const pending = trackedTips.filter(function(t) { return t.result === 'pending' && t.kickoff && new Date(t.kickoff) < new Date(now.getTime() - 2 * 60 * 60 * 1000); });
-  if (pending.length === 0) return;
+  if (pending.length === 0) { console.log('[RESULTS] No pending tips past kickoff (' + trackedTips.filter(function(t) { return t.result === 'pending'; }).length + ' future pending)'); return; }
   loadElo(); loadForm(); loadWeights(); loadCalibration(); loadTeamStats(); loadH2H(); loadMatchDates(); loadFeatureLogs();
   var checked = 0;
   for (var i = 0; i < pending.length; i++) {
     var tip = pending[i];
     try {
       var home, away; var parts = tip.match.split(' vs '); home = parts[0]; away = parts[1];
-      // Soccer: football-data.org API (covers EPL, Championship, Bundesliga, Serie A, Ligue 1, Eredivisie, Brasileirao, etc.)
+      // Soccer: try football-data.org per-competition (free tier) first
       if (tip.type.startsWith('soccer_') && tip.type !== 'soccer_usa_mls') {
-        var tipKickoff = new Date(tip.kickoff);
-        var dateFrom = new Date(tipKickoff.getTime() - 86400000).toISOString().split('T')[0];
-        var dateTo = new Date(now.getTime() + 86400000).toISOString().split('T')[0];
-        var res = await fetch(FB_API_BASE + '/matches?dateFrom=' + dateFrom + '&dateTo=' + dateTo, { headers: { 'X-Auth-Token': FB_API_KEY } });
-        if (res.ok) { var data = await res.json(); if (data.matches) {
-          var match = data.matches.find(function(m) { return normalizeTeamName(m.homeTeam ? m.homeTeam.name : '') === normalizeTeamName(home) && normalizeTeamName(m.awayTeam ? m.awayTeam.name : '') === normalizeTeamName(away) && m.status === 'FINISHED' && m.score && m.score.fullTime && m.score.fullTime.home !== null && m.score.fullTime.away !== null; });
-          if (match) { var hg = match.score.fullTime.home, ag = match.score.fullTime.away; applyResultToTip(tip, home, away, hg, ag, now); checked++; continue; }
-        }}
+        var found = await checkFBCompetitionResult(tip, home, away, now);
+        if (found) { checked++; continue; }
       }
       // Cricket: SportMonks API
       if (tip.type === 'cricket_international_t20') {
         var found = await checkCricketResult(tip, home, away, now);
         if (found) { checked++; continue; }
       }
-      // Try the-odds-api first (works for MLB, NRL, AFL, etc.)
+      // Tennis: ESPN free API
+      if (tip.type.startsWith('tennis_')) {
+        var found = await checkESPNResult(tip, home, away, now);
+        if (found) { checked++; continue; }
+        var found = await checkTennisResult(tip, home, away, now);
+        if (found) { checked++; continue; }
+      }
+      // Try the-odds-api (works for MLB, NRL, AFL, etc. — only if credits available)
       var res = await fetch(ODDS_API_BASE + '/sports/' + tip.type + '/scores?apiKey=' + ODDS_API_KEY + '&daysFrom=2');
       if (res.ok) {
         var scores = await res.json();
@@ -1796,14 +1937,17 @@ async function checkResults() {
           }
         }
       }
+      // Fallback: ESPN free API (covers soccer, NFL, MLB, NRL, AFL, cricket)
+      var found = await checkESPNResult(tip, home, away, now);
+      if (found) { checked++; continue; }
+      // Fallback: API-Football (free 100/day)
+      if (tip.type.startsWith('soccer_')) {
+        var found = await checkAPIFootballResult(tip, home, away, now);
+        if (found) { checked++; continue; }
+      }
       // Fallback: SportMonks football scores
       if (tip.type.startsWith('soccer_')) {
         var found = await checkSportMonksResult(tip, home, away, now);
-        if (found) { checked++; continue; }
-      }
-      // Fallback: SportMonks tennis scores
-      if (tip.type.startsWith('tennis_')) {
-        var found = await checkTennisResult(tip, home, away, now);
         if (found) { checked++; continue; }
       }
     } catch (e) { console.log('[RESULTS] Error checking ' + tip.match + ': ' + (e.message || e).slice(0, 100)); }
@@ -3460,35 +3604,63 @@ async function fetchLiveScores() {
 
   if (activeSoccer.length > 0) {
     try {
-      var dateFrom = new Date(now - 86400000).toISOString().split('T')[0];
-      var dateTo = new Date(now + 86400000).toISOString().split('T')[0];
-      var res = await fetch(FB_API_BASE + '/matches?dateFrom=' + dateFrom + '&dateTo=' + dateTo, { headers: { 'X-Auth-Token': FB_API_KEY } });
-      if (res.ok) {
-        var data = await res.json();
-        if (data.matches) {
-          for (var i = 0; i < activeSoccer.length; i++) {
-            var tip = activeSoccer[i];
-            var parts = tip.match.split(' vs ');
-            var home = parts[0], away = parts[1];
-            var match = data.matches.find(function(m) {
-              return m.status === 'IN_PLAY' || m.status === 'PAUSED' || m.status === 'FINISHED';
-            });
-            // Try to find specific match
-            match = data.matches.find(function(m) {
-              var mh = m.homeTeam ? normalizeTeamName(m.homeTeam.name) : '';
-              var ma = m.awayTeam ? normalizeTeamName(m.awayTeam.name) : '';
-              return mh === normalizeTeamName(home) && ma === normalizeTeamName(away);
-            });
-            if (match && match.score && match.score.fullTime && match.score.fullTime.home !== null) {
-              var status = match.status === 'FINISHED' ? 'FT' : (match.status === 'IN_PLAY' ? 'LIVE' : match.status === 'PAUSED' ? 'HT' : match.status);
-              var elapsed = '';
-              if (match.status === 'IN_PLAY' && match.minute) elapsed = match.minute + "'";
-              results[tip.id || (tip.match + tip.pick)] = {
-                homeScore: match.score.fullTime.home,
-                awayScore: match.score.fullTime.away,
-                status: status,
-                elapsed: elapsed
-              };
+      // Try per-competition football-data.org (free tier) for each active soccer tip
+      for (var i = 0; i < activeSoccer.length; i++) {
+        var tip = activeSoccer[i];
+        var parts = tip.match.split(' vs ');
+        var home = parts[0], away = parts[1];
+        // Try per-competition endpoint (free tier)
+        var code = COMPETITION_CODE_MAP[tip.type];
+        if (code && FB_API_KEY) {
+          var tipDate = new Date(tip.kickoff).toISOString().split('T')[0];
+          var fUrl = FB_API_BASE + '/competitions/' + code + '/matches?dateFrom=' + tipDate + '&dateTo=' + tipDate;
+          var fRes = await safeFetch(fUrl, { headers: { 'X-Auth-Token': FB_API_KEY } }, 8000);
+          if (fRes.ok) {
+            var fData = await fRes.json();
+            if (fData.matches) {
+              var match = fData.matches.find(function(m) {
+                return normalizeTeamName(m.homeTeam ? m.homeTeam.name : '') === normalizeTeamName(home) && normalizeTeamName(m.awayTeam ? m.awayTeam.name : '') === normalizeTeamName(away);
+              });
+              if (match && match.score && match.score.fullTime && match.score.fullTime.home !== null) {
+                var status = match.status === 'FINISHED' ? 'FT' : (match.status === 'IN_PLAY' ? 'LIVE' : match.status === 'PAUSED' ? 'HT' : match.status);
+                var elStr = match.status === 'IN_PLAY' && match.minute ? match.minute + "'" : '';
+                results[tip.id || (tip.match + tip.pick)] = { homeScore: match.score.fullTime.home, awayScore: match.score.fullTime.away, status: status, elapsed: elStr };
+                continue;
+              }
+            }
+          }
+        }
+        // Fallback: ESPN free API for live scores
+        var espnSlug = ESPN_LEAGUE_MAP[tip.type];
+        if (espnSlug) {
+          var espnDate = espnDateStr(new Date(tip.kickoff));
+          var eUrl = 'https://site.api.espn.com/apis/site/v2/sports/' + espnSlug + '/scoreboard?dates=' + espnDate;
+          var eRes = await safeFetch(eUrl, { headers: { 'User-Agent': 'MJKTips/1.0' } }, 8000);
+          if (eRes.ok) {
+            var eData = await eRes.json();
+            if (eData.events) {
+              for (var ei = 0; ei < eData.events.length; ei++) {
+                var ev = eData.events[ei];
+                if (!ev.competitions || !ev.competitions[0]) continue;
+                var comp = ev.competitions[0];
+                if (!comp.competitors || comp.competitors.length < 2) continue;
+                var c1 = comp.competitors[0], c2 = comp.competitors[1];
+                var n1 = ((c1.team ? c1.team.displayName : '') || '').toLowerCase();
+                var n2 = ((c2.team ? c2.team.displayName : '') || '').toLowerCase();
+                var nh = normalizeTeamName(home).toLowerCase(), na = normalizeTeamName(away).toLowerCase();
+                var found = false;
+                if ((n1.indexOf(nh) >= 0 || nh.indexOf(n1) >= 0) && (n2.indexOf(na) >= 0 || na.indexOf(n2) >= 0)) found = true;
+                if ((n1.indexOf(na) >= 0 || na.indexOf(n1) >= 0) && (n2.indexOf(nh) >= 0 || nh.indexOf(n2) >= 0)) found = true;
+                if (found && comp.status && comp.status.type) {
+                  var isCompleted = comp.status.type.completed;
+                  var isLive = comp.status.type.state === 'in';
+                  var eStatus = isCompleted ? 'FT' : (isLive ? 'LIVE' : comp.status.type.detail || 'LIVE');
+                  var eElapsed = isLive && comp.status.displayClock ? comp.status.displayClock : '';
+                  var hs = parseInt(c1.score || '0', 10), as = parseInt(c2.score || '0', 10);
+                  results[tip.id || (tip.match + tip.pick)] = { homeScore: hs, awayScore: as, status: eStatus, elapsed: eElapsed };
+                  break;
+                }
+              }
             }
           }
         }
@@ -3496,12 +3668,12 @@ async function fetchLiveScores() {
     } catch (e) {}
   }
 
-  // Also check the-odds-api for non-soccer live scores
+  // Also check the-odds-api + ESPN for non-soccer live scores
   var activeOther = cachedTips.filter(function(t) {
     if (t.result !== 'pending' || !t.kickoff) return false;
     var ko = new Date(t.kickoff).getTime();
     var elapsed = now - ko;
-    return elapsed > 0 && elapsed < 4 * 60 * 60 * 1000 && t.type !== 'soccer_epl' && t.type !== 'soccer_fifa_world_cup' && t.type !== 'horse_racing';
+    return elapsed > 0 && elapsed < 4 * 60 * 60 * 1000 && !t.type.startsWith('soccer_') && !t.type.startsWith('tennis_') && t.type !== 'horse_racing';
   });
 
   if (activeOther.length > 0 && ODDS_API_KEY) {
@@ -3530,6 +3702,45 @@ async function fetchLiveScores() {
               }
             }
           }
+        }
+      }
+    } catch (e) {}
+  }
+
+  // ESPN free API fallback for non-soccer live scores
+  for (var oi = 0; oi < activeOther.length; oi++) {
+    var tip = activeOther[oi];
+    if (results[tip.id || (tip.match + tip.pick)]) continue;
+    var espnSlug = ESPN_LEAGUE_MAP[tip.type];
+    if (!espnSlug) continue;
+    try {
+      var espnDate = espnDateStr(new Date(tip.kickoff));
+      var eUrl = 'https://site.api.espn.com/apis/site/v2/sports/' + espnSlug + '/scoreboard?dates=' + espnDate;
+      var eRes = await safeFetch(eUrl, { headers: { 'User-Agent': 'MJKTips/1.0' } }, 8000);
+      if (!eRes.ok) continue;
+      var eData = await eRes.json();
+      if (!eData.events) continue;
+      var parts = tip.match.split(' vs ');
+      var home = parts[0], away = parts[1];
+      for (var ei = 0; ei < eData.events.length; ei++) {
+        var ev = eData.events[ei];
+        if (!ev.competitions || !ev.competitions[0]) continue;
+        var comp = ev.competitions[0];
+        if (!comp.competitors || comp.competitors.length < 2) continue;
+        var c1 = comp.competitors[0], c2 = comp.competitors[1];
+        var n1 = ((c1.team ? c1.team.displayName : '') || '').toLowerCase();
+        var n2 = ((c2.team ? c2.team.displayName : '') || '').toLowerCase();
+        var nh = normalizeTeamName(home).toLowerCase(), na = normalizeTeamName(away).toLowerCase();
+        var matchFound = false;
+        if ((n1.indexOf(nh) >= 0 || nh.indexOf(n1) >= 0) && (n2.indexOf(na) >= 0 || na.indexOf(n2) >= 0)) matchFound = true;
+        if ((n1.indexOf(na) >= 0 || na.indexOf(n1) >= 0) && (n2.indexOf(nh) >= 0 || nh.indexOf(n2) >= 0)) matchFound = true;
+        if (matchFound && comp.status && comp.status.type) {
+          var isCompleted = comp.status.type.completed;
+          var isLive = comp.status.type.state === 'in';
+          var eStatus = isCompleted ? 'FT' : (isLive ? 'LIVE' : 'Scheduled');
+          var hs = parseInt(c1.score || '0', 10), as = parseInt(c2.score || '0', 10);
+          results[tip.id || (tip.match + tip.pick)] = { homeScore: hs, awayScore: as, status: eStatus, elapsed: isLive ? (comp.status.displayClock || '') : '' };
+          break;
         }
       }
     } catch (e) {}
