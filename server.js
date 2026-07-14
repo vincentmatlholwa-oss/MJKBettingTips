@@ -252,6 +252,12 @@ const SPORT_CONFIG = {
 };
 function getCfg(key) { return SPORT_CONFIG[key] || { hasDraw: true, homeAdv: 1.10, kFactor: 32, formWindow: 5, minConf: 68, maxConf: 96, usePoisson: false, dcRho: 0 }; }
 
+const TIER_DURATIONS = {
+  starter: 7 * 24 * 60 * 60 * 1000,
+  pro: 7 * 24 * 60 * 60 * 1000,
+  elite: 30 * 24 * 60 * 60 * 1000
+};
+
 const TIERS = {
   free:  { name: 'Free', tipLimit: 3, earlyAccess: false, bankersOnly: false, sportFiltering: false, accaBuilder: false, roiDashboard: false, telegramAlerts: false, monthlyReport: false, horseRacing: false, apiAccess: false, price: 0 },
   starter: { name: 'Starter', tipLimit: 10, earlyAccess: false, bankersOnly: false, sportFiltering: false, accaBuilder: false, roiDashboard: false, telegramAlerts: true, monthlyReport: false, horseRacing: false, apiAccess: false, price: 150 },
@@ -594,7 +600,7 @@ async function buildStatsBasedTip(home, away, league, kickoff, sportKey) {
   var features = buildFeatures(home, away, sportKey);
   var hFormS = getFormWindow(sportKey, home, cfg.formWindow);
   var aFormS = getFormWindow(sportKey, away, cfg.formWindow);
-  var reasonS = buildTipReason({ marketType: 'h2h', market: mr, pick: pick, home: home, away: away, poisson: poisson, eloH: adjHome, eloA: adjAway, hForm: hFormS, aForm: aFormS, expectedTotal: poisson.expectedHomeGoals + poisson.expectedAwayGoals });
+  var reasonS = buildTipReason({ sportKey: sportKey, marketType: 'h2h', market: mr, pick: pick, home: home, away: away, poisson: poisson, eloH: adjHome, eloA: adjAway, hForm: hFormS, aForm: aFormS, expectedTotal: poisson.expectedHomeGoals + poisson.expectedAwayGoals });
 
   return {
     type: sportKey, sport: 'Football', icon: '\u26BD',
@@ -1539,7 +1545,7 @@ async function buildSoccerTip(oddsMatch, sport) {
   else if (ensembleResult.disagree) finalConf = Math.max(cfg.minConf, finalConf - 8);
   else finalConf = Math.max(cfg.minConf, finalConf - 3);
   var valueEdge = best.prob - (1 / parseFloat(best.odds));
-  var reason = buildTipReason({ marketType: best.marketType, market: best.market, pick: best.pick, home: home, away: away, poisson: poisson, eloH: adjustedElo, eloA: adjustedEloA, hForm: hForm, aForm: aForm, bsdPred: bsdPred, afPred: afPred, ensembleResult: ensembleResult, bttsProb: btts.yes, expectedTotal: poisson.expectedHomeGoals + poisson.expectedAwayGoals, valueEdge: valueEdge, h2hTotal: h2hData ? h2hData.total : 0, h2hHomeWins: h2hData ? h2hData.homeWinRate : 0.5 });
+  var reason = buildTipReason({ sportKey: sport.key, marketType: best.marketType, market: best.market, pick: best.pick, home: home, away: away, poisson: poisson, eloH: adjustedElo, eloA: adjustedEloA, hForm: hForm, aForm: aForm, bsdPred: bsdPred, afPred: afPred, ensembleResult: ensembleResult, bttsProb: btts.yes, expectedTotal: poisson.expectedHomeGoals + poisson.expectedAwayGoals, valueEdge: valueEdge, h2hTotal: h2hData ? h2hData.total : 0, h2hHomeWins: h2hData ? h2hData.homeWinRate : 0.5 });
   return { type: sport.key, sport: sport.name, icon: sport.icon, match: home + ' vs ' + away, league: sport.name, country: COUNTRY_MAP[sport.key] || '', marketType: best.marketType, market: best.market, marketLine: best.line, kickoff: oddsMatch.commence_time, pick: best.pick, odds: best.odds, conf: finalConf, realOdds: consensus ? { home: consensus.bestHomePrice || null, away: consensus.bestAwayPrice || null, draw: consensus.bestDrawPrice || null } : null, bookmaker: best.bookmaker, valueBet: best.valueBet, reason: reason, features: features, bsdAgree: bsdPred ? ensembleResult.agree : null, tripleAgree: ensembleResult.unanimous };
 }
 
@@ -1610,7 +1616,7 @@ function buildBaseballTip(oddsMatch, sport) {
   var valueNote = ' Value +' + (valueMargin * 100).toFixed(0) + '%';
   var hForm3 = getFormWindow(sport.key, home, cfg.formWindow);
   var aForm3 = getFormWindow(sport.key, away, cfg.formWindow);
-  var reason = buildTipReason({ marketType: 'h2h', market: 'Match Winner', pick: tipText, home: home, away: away, poisson: null, eloH: adjustedElo, eloA: adjustedEloA, hForm: hForm3, aForm: aForm3, bsdPred: null, afPred: null, ensembleResult: { unanimous: false, agree: false }, expectedTotal: 0, valueEdge: valueMargin });
+  var reason = buildTipReason({ sportKey: sport.key, marketType: 'h2h', market: 'Match Winner', pick: tipText, home: home, away: away, poisson: null, eloH: adjustedElo, eloA: adjustedEloA, hForm: hForm3, aForm: aForm3, bsdPred: null, afPred: null, ensembleResult: { unanimous: false, agree: false }, expectedTotal: 0, valueEdge: valueMargin });
   return { type: sport.key, sport: sport.name, icon: sport.icon, match: home + ' vs ' + away, league: sport.name, country: COUNTRY_MAP[sport.key] || '', marketType: 'h2h', market: 'Match Winner', marketLine: null, kickoff: oddsMatch.commence_time, pick: tipText, odds: odds, conf: confidence, realOdds: { home: consensus.bestHomePrice || null, away: consensus.bestAwayPrice || null, draw: null }, bookmaker: bookmaker, valueBet: true, reason: reason, features: features };
 }
 
@@ -1679,7 +1685,7 @@ function buildNonSoccerTip(oddsMatch, sport) {
   else finalConf2 = Math.max(cfg.minConf, finalConf2 - 3);
   var hFormN = getFormWindow(sport.key, home, cfg.formWindow);
   var aFormN = getFormWindow(sport.key, away, cfg.formWindow);
-  reason = buildTipReason({ marketType: 'h2h', market: cfg.hasDraw ? 'Match Result' : 'Match Winner', pick: tipText, home: home, away: away, poisson: { expectedHomeGoals: (hStats.attack / 7.5) * 1.25 * cfg.homeAdv, expectedAwayGoals: (aStats.attack / 7.5) * 1.05 }, eloH: adjustedElo, eloA: adjustedEloA, hForm: hFormN, aForm: aFormN, bsdPred: bsdPred, afPred: afPred, ensembleResult: ensembleResult, h2hTotal: h2h ? h2h.total : 0, h2hHomeWins: h2h ? h2h.homeWinRate : 0.5 });
+  reason = buildTipReason({ sportKey: sport.key, marketType: 'h2h', market: cfg.hasDraw ? 'Match Result' : 'Match Winner', pick: tipText, home: home, away: away, poisson: { expectedHomeGoals: (hStats.attack / 7.5) * 1.25 * cfg.homeAdv, expectedAwayGoals: (aStats.attack / 7.5) * 1.05 }, eloH: adjustedElo, eloA: adjustedEloA, hForm: hFormN, aForm: aFormN, bsdPred: bsdPred, afPred: afPred, ensembleResult: ensembleResult, h2hTotal: h2h ? h2h.total : 0, h2hHomeWins: h2h ? h2h.homeWinRate : 0.5 });
   return { type: sport.key, sport: sport.name, icon: sport.icon, match: home + ' vs ' + away, league: sport.name, country: COUNTRY_MAP[sport.key] || '', marketType: 'h2h', market: cfg.hasDraw ? 'Match Result' : 'Match Winner', marketLine: null, kickoff: oddsMatch.commence_time, pick: tipText, odds: odds, conf: finalConf2, realOdds: { home: consensus.bestHomePrice || null, away: consensus.bestAwayPrice || null, draw: cfg.hasDraw ? (consensus.bestDrawPrice || null) : null }, bookmaker: bookmaker, valueBet: valueBet, reason: reason, features: features, bsdAgree: bsdPred ? ensembleResult.agree : null, tripleAgree: ensembleResult.unanimous };
 }
 
@@ -2046,10 +2052,7 @@ function buildESPNFixtureTip(event, sportKey) {
   conf = calibrateConfidence(conf);
   var hFormN = getFormWindow(sportKey, home, cfg.formWindow);
   var aFormN = getFormWindow(sportKey, away, cfg.formWindow);
-  var reason = 'ELO ' + Math.round(adjH) + ' vs ' + Math.round(adjA);
-  if (rawLR !== null) reason += ' ML-boosted';
-  if (hFormN || aFormN) reason += ' Form ' + (hFormN ? hFormN.rate : '?') + 'v' + (aFormN ? aFormN.rate : '?');
-  reason += '. ESPN fixture.';
+  var reason = buildTipReason({ sportKey: sportKey, marketType: 'h2h', market: mr, pick: pick, home: home, away: away, poisson: null, eloH: adjH, eloA: adjA, hForm: hFormN, aForm: aFormN, ensembleResult: null, expectedTotal: 0 });
   return {
     type: sportKey, sport: sport.name, icon: sport.icon,
     match: home + ' vs ' + away, league: sport.name,
@@ -3238,7 +3241,7 @@ function buildBSDStandaloneTip(bsdKey) {
   if (unanimous) conf = Math.min(96, conf + 10); // All 3 agree = big boost
   else if (majority) conf = Math.min(92, conf + 5); // 2/3 agree = moderate boost
 
-  var reason = buildTipReason({ marketType: 'h2h', market: 'Match Result', pick: pickText, home: home, away: away, poisson: ourPred ? { expectedHomeGoals: ourPred.lambdaHome, expectedAwayGoals: ourPred.lambdaAway } : null, eloH: ourPred ? ourPred.homeElo : 1500, eloA: ourPred ? ourPred.awayElo : 1500, bsdPred: bsd, afPred: afPred, ensembleResult: { unanimous: unanimous, agree: majority }, h2hTotal: 0, h2hHomeWins: 0.5 });
+  var reason = buildTipReason({ sportKey: sportKey, marketType: 'h2h', market: 'Match Result', pick: pickText, home: home, away: away, poisson: ourPred ? { expectedHomeGoals: ourPred.lambdaHome, expectedAwayGoals: ourPred.lambdaAway } : null, eloH: ourPred ? ourPred.homeElo : 1500, eloA: ourPred ? ourPred.awayElo : 1500, bsdPred: bsd, afPred: afPred, ensembleResult: { unanimous: unanimous, agree: majority }, h2hTotal: 0, h2hHomeWins: 0.5 });
 
   return {
     type: sportKey, sport: 'Football', icon: '⚽',
@@ -3324,7 +3327,7 @@ function buildSportMonksTip(fixture) {
 
   var hForm2 = getFormWindow(sportKey, home, cfg.formWindow);
   var aForm2 = getFormWindow(sportKey, away, cfg.formWindow);
-  var reason2 = buildTipReason({ marketType: 'h2h', market: 'Match Result', pick: pick, home: home, away: away, poisson: poisson, eloH: adjH, eloA: adjA, hForm: hForm2, aForm: aForm2, bsdPred: bsdPred2, afPred: afPred2, ensembleResult: ensembleR2, expectedTotal: poisson.expectedHomeGoals + poisson.expectedAwayGoals });
+  var reason2 = buildTipReason({ sportKey: sportKey, marketType: 'h2h', market: 'Match Result', pick: pick, home: home, away: away, poisson: poisson, eloH: adjH, eloA: adjA, hForm: hForm2, aForm: aForm2, bsdPred: bsdPred2, afPred: afPred2, ensembleResult: ensembleR2, expectedTotal: poisson.expectedHomeGoals + poisson.expectedAwayGoals });
 
   return {
     type: sportKey, sport: 'Football', icon: '\u26BD',
@@ -4539,7 +4542,7 @@ function scheduleDailyBroadcast() {
 app.get('/api/admin/users', authMiddleware, adminMiddleware, function(req, res) {
   var users = loadUsers();
   var list = Object.keys(users).map(function(k) {
-    return { username: k, tier: users[k].tier, role: users[k].role, createdAt: users[k].createdAt, subscribedAt: users[k].subscribedAt || null, pendingTier: users[k].pendingTier || null, paymentRef: users[k].paymentRef || null };
+    return { username: k, tier: users[k].tier, role: users[k].role, createdAt: users[k].createdAt, subscribedAt: users[k].subscribedAt || null, subscriptionExpiresAt: users[k].subscriptionExpiresAt || null, pendingTier: users[k].pendingTier || null, paymentRef: users[k].paymentRef || null };
   });
   res.json({ users: list, total: list.length });
 });
@@ -4555,6 +4558,11 @@ app.post('/api/admin/set-tier', authMiddleware, adminMiddleware, function(req, r
   users[targetUser].tier = newTier;
   users[targetUser].subscribedAt = new Date().toISOString();
   users[targetUser].subscribedBy = req.user.username;
+  if (newTier !== 'free' && TIER_DURATIONS[newTier]) {
+    users[targetUser].subscriptionExpiresAt = new Date(Date.now() + TIER_DURATIONS[newTier]).toISOString();
+  } else {
+    delete users[targetUser].subscriptionExpiresAt;
+  }
   delete users[targetUser].pendingTier;
   delete users[targetUser].paymentRef;
   saveUsers(users);
@@ -4698,6 +4706,27 @@ app.use(function(err, req, res, next) {
 loadTrackedTips(); loadElo(); loadForm(); loadWeights(); loadCalibration(); loadTeamStats(); loadH2H(); loadMatchDates(); loadModelCoeffs(); loadFeatureLogs(); loadSportHealth(); loadCachedOdds(); loadRacingEvents();
 restoreDataFromGitHub();
 refreshTips();
+
+function checkExpiredSubscriptions() {
+  var users = loadUsers();
+  var now = Date.now();
+  var changed = false;
+  Object.keys(users).forEach(function(username) {
+    var u = users[username];
+    if (u.tier && u.tier !== 'free' && u.subscriptionExpiresAt) {
+      var expiresAt = new Date(u.subscriptionExpiresAt).getTime();
+      if (now >= expiresAt) {
+        console.log('[SUB-EXPIRED] ' + username + ' ' + u.tier + ' expired, reverting to free');
+        u.tier = 'free';
+        delete u.subscriptionExpiresAt;
+        changed = true;
+      }
+    }
+  });
+  if (changed) saveUsers(users);
+}
+checkExpiredSubscriptions();
+setInterval(checkExpiredSubscriptions, 300000);
 setInterval(refreshTips, 300000);
 setInterval(checkResults, 300000);
 setInterval(backupDataToGitHub, 3600000); // Backup to GitHub every hour

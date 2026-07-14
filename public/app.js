@@ -601,9 +601,15 @@ function renderAdminUsers(users) {
     var safeTier = u.tier.replace(/[^a-z]/g, '');
     var roleIcon = u.role === 'admin' ? '<span style="margin-right:4px;">&#x1F451;</span>' : '';
     var created = u.createdAt ? new Date(u.createdAt).toLocaleDateString('en-ZA') : '';
+    var expiryNote = '';
+    if (u.subscriptionExpiresAt && u.tier !== 'free') {
+      var expDate = new Date(u.subscriptionExpiresAt);
+      var daysLeft = Math.max(0, Math.ceil((expDate.getTime() - Date.now()) / 86400000));
+      expiryNote = '<span style="color:' + (daysLeft <= 2 ? 'var(--red)' : 'var(--muted)') + ';font-size:10px;">' + daysLeft + 'd left</span>';
+    }
     html += '<div class="admin-user-row" onclick="selectAdminUser(\'' + safeName + '\',\'' + safeTier + '\')">' +
       '<div style="display:flex;align-items:center;gap:8px;min-width:0;"><span style="font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + roleIcon + safeName + '</span> <span class="tier-badge tier-' + safeTier + '">' + safeTier + '</span></div>' +
-      '<div style="display:flex;gap:8px;align-items:center;flex-shrink:0;"><span style="color:var(--muted);font-size:11px;">' + created + '</span>' +
+      '<div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">' + expiryNote + '<span style="color:var(--muted);font-size:11px;">' + created + '</span>' +
       '<select class="admin-select" style="padding:4px 8px;font-size:11px;min-height:auto;" onclick="event.stopPropagation()" onchange="quickSetTier(\'' + safeName + '\',this.value)">' +
       '<option value="free"' + (u.tier === 'free' ? ' selected' : '') + '>Free</option>' +
       '<option value="starter"' + (u.tier === 'starter' ? ' selected' : '') + '>Starter</option>' +
