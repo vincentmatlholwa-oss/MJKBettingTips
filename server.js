@@ -62,6 +62,7 @@ app.get('/api/vapid-key', function(req, res) { res.json({ key: VAPID_PUBLIC_KEY 
 const FB_API_KEY = process.env.FOOTBALL_DATA_API_KEY || '';
 const FB_API_BASE = 'https://api.football-data.org/v4';
 const ODDS_API_KEY = process.env.ODDS_API_KEY || '';
+const ODDS_API_KEY_2 = process.env.ODDS_API_KEY_2 || '';
 const ODDS_API_BASE = 'https://api.the-odds-api.com/v4';
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const TELEGRAM_GROUP_ID = process.env.TELEGRAM_GROUP_ID || '';
@@ -1896,6 +1897,91 @@ async function checkAPIFootballResult(tip, home, away, now) {
   } catch (e) { return false; }
 }
 
+// ESPN non-soccer fixture tip generator (used when odds-api is out of credits)
+var ESPN_SCOREBOARD_SLUGS = {
+  'tennis_atp_wimbledon': 'tennis/atp',
+  'tennis_wta_wimbledon': 'tennis/wta',
+  'americanfootball_nfl': 'football/nfl',
+  'baseball_mlb': 'baseball/mlb',
+  'mma_mixed_martial_arts': 'mma'
+};
+var cachedESPNNonSoccer = {};
+async function fetchESPNNonSoccerFixtures() {
+  var keys = Object.keys(ESPN_SCOREBOARD_SLUGS);
+  for (var ki = 0; ki < keys.length; ki++) {
+    var sportKey = keys[ki];
+    var slug = ESPN_SCOREBOARD_SLUGS[sportKey];
+    if (!slug) { cachedESPNNonSoccer[sportKey] = []; continue; }
+    try {
+      var url = 'https://site.api.espn.com/apis/site/v2/sports/' + slug + '/scoreboard?dates=' + new Date().toISOString().slice(0,10).replace(/-/g,'');
+      var res = await safeFetch(url, { headers: { 'User-Agent': 'MJKTips' } }, 8000);
+      if (!res.ok) { cachedESPNNonSoccer[sportKey] = []; continue; }
+      var data = await res.json();
+      var events = (data.events || []).filter(function(e) {
+        var st = e.competitions && e.competitions[0] && e.competitions[0].status;
+        return st && st.type && (st.type.state === 'pre' || st.type.name === 'STATUS_SCHEDULED');
+      });
+      cachedESPNNonSoccer[sportKey] = events;
+      console.log('[ESPN-FIXTURES] ' + sportKey + ': ' + events.length + ' upcoming');
+    } catch (e) {
+      cachedESPNNonSoccer[sportKey] = [];
+      console.log('[ESPN-FIXTURES] ' + sportKey + ' ERROR: ' + (e.message || e).slice(0, 100));
+    }
+  }
+}
+function buildESPNFixtureTip(event, sportKey) {
+  var sport = SPORTS.find(function(s) { return s.key === sportKey; });
+  if (!sport) return null;
+  var comp = event.competitions && event.competitions[0];
+  if (!comp || !comp.competitors || comp.competitors.length < 2) return null;
+  var c0 = comp.competitors[0], c1 = comp.competitors[1];
+  var home = (c0.team && c0.team.displayName) || (c0.athlete && c0.athlete.displayName) || c0.displayName || '';
+  var away = (c1.team && c1.team.displayName) || (c1.athlete && c1.athlete.displayName) || c1.displayName || '';
+  if (!home || !away) return null;
+  var cfg = getCfg(sportKey);
+  var hElo = getElo(sportKey, home);
+  var aElo = getElo(sportKey, away);
+  var fmH = formModifier(sportKey, home);
+  var fmA = formModifier(sportKey, away);
+  var adjH = Math.max(1000, Math.min(2000, hElo + (cfg.hasDraw ? 0 : HOME_ADVANTAGE_ELO) + fmH));
+  var adjA = Math.max(1000, Math.min(2000, aElo + fmA));
+  var eloProb = expectedScore(adjH, adjA);
+  var features = buildFeatures(home, away, sportKey);
+  var rawLR = predictLR(sportKey, features);
+  var predH, predA;
+  if (rawLR !== null) { predH = rawLR * 0.6 + eloProb * 0.4; predA = (1 - rawLR) * 0.6 + (1 - eloProb) * 0.4; }
+  else { predH = eloProb; predA = 1 - eloProb; }
+  var kickoff = event.date || (comp.date) || new Date().toISOString();
+  var pick = '', oddsStr = '2.00', conf = 0, mr = cfg.hasDraw ? 'Match Result' : 'Match Winner';
+  if (!cfg.hasDraw) {
+    if (predH > predA && predH > 0.40) { pick = home + ' to Win'; conf = Math.round(predH * 100); oddsStr = predH > 0.05 ? (1 / predH * 0.92).toFixed(2) : '2.00'; }
+    else if (predA > predH && predA > 0.40) { pick = away + ' to Win'; conf = Math.round(predA * 100); oddsStr = predA > 0.05 ? (1 / predA * 0.92).toFixed(2) : '2.00'; }
+    else return null;
+  } else {
+    var predD = 0.25;
+    if (predH > predA && predH > predD && predH > 0.35) { pick = home + ' to Win'; conf = Math.round(predH * 100); oddsStr = predH > 0.05 ? (1 / predH * 0.92).toFixed(2) : '2.00'; }
+    else if (predA > predH && predA > predD && predA > 0.35) { pick = away + ' to Win'; conf = Math.round(predA * 100); oddsStr = predA > 0.05 ? (1 / predA * 0.92).toFixed(2) : '2.00'; }
+    else return null;
+  }
+  conf = Math.min(cfg.maxConf, Math.max(cfg.minConf, conf));
+  conf = calibrateConfidence(conf);
+  var hFormN = getFormWindow(sportKey, home, cfg.formWindow);
+  var aFormN = getFormWindow(sportKey, away, cfg.formWindow);
+  var reason = 'ELO ' + Math.round(adjH) + ' vs ' + Math.round(adjA);
+  if (rawLR !== null) reason += ' ML-boosted';
+  if (hFormN || aFormN) reason += ' Form ' + (hFormN ? hFormN.rate : '?') + 'v' + (aFormN ? aFormN.rate : '?');
+  reason += '. ESPN fixture.';
+  return {
+    type: sportKey, sport: sport.name, icon: sport.icon,
+    match: home + ' vs ' + away, league: sport.name,
+    country: COUNTRY_MAP[sportKey] || '',
+    marketType: 'h2h', market: mr, marketLine: null,
+    kickoff: kickoff, pick: pick, odds: oddsStr, conf: conf,
+    realOdds: null, bookmaker: 'ESPN', valueBet: false,
+    reason: reason, features: features
+  };
+}
+
 async function checkResults() {
   const now = new Date();
   const pending = trackedTips.filter(function(t) { return t.result === 'pending' && t.kickoff && new Date(t.kickoff) < new Date(now.getTime() - 2 * 60 * 60 * 1000); });
@@ -1976,17 +2062,35 @@ async function refreshTips() {
   await fetchStandingsData();
   console.log('[REFRESH] Starting... oddsFetchDate=' + oddsFetchDate + ' today=' + today);
   if (oddsFetchDate !== today) {
+    var oddsKeyInUse = ODDS_API_KEY;
+    var oddsKey2Avail = !!ODDS_API_KEY_2;
+    var primaryExhausted = false;
     for (var si = 0; si < SPORTS.length; si++) {
       try {
         var sportKey = SPORTS[si].key;
-        var url = ODDS_API_BASE + '/sports/' + sportKey + '/odds?apiKey=' + ODDS_API_KEY + '&regions=us,uk,eu&markets=h2h,spreads,totals';
-        var res = await fetch(url);
-        if (res.ok) {
+        // If primary key exhausted and we have a backup, use it
+        if (primaryExhausted && oddsKey2Avail) oddsKeyInUse = ODDS_API_KEY_2;
+        var url = ODDS_API_BASE + '/sports/' + sportKey + '/odds?apiKey=' + oddsKeyInUse + '&regions=us,uk,eu&markets=h2h,spreads,totals';
+        var res = await safeFetch(url, {}, 10000);
+        // Track remaining credits from headers
+        var rem = res.headers.get('x-requests-remaining');
+        if (rem !== null && si === 0) console.log('[ODDS] API credits remaining: ' + rem);
+        if (res.status === 401 || res.status === 429) {
+          var txt = await res.text();
+          if (!primaryExhausted && oddsKey2Avail) {
+            console.log('[ODDS] Primary key EXHAUSTED (HTTP ' + res.status + '), switching to backup key...');
+            primaryExhausted = true;
+            si--; // retry this sport with backup key
+            continue;
+          }
+          console.log('[ODDS] ' + sportKey + ' FAILED HTTP ' + res.status + ': ' + txt.slice(0, 200));
+          cachedOdds[sportKey] = [];
+        } else if (res.ok) {
           cachedOdds[sportKey] = await res.json();
           console.log('[ODDS] ' + sportKey + ': ' + cachedOdds[sportKey].length + ' matches');
         } else {
-          var txt = await res.text();
-          console.log('[ODDS] ' + sportKey + ' FAILED HTTP ' + res.status + ': ' + txt.slice(0, 200));
+          var txt2 = await res.text();
+          console.log('[ODDS] ' + sportKey + ' FAILED HTTP ' + res.status + ': ' + txt2.slice(0, 200));
           cachedOdds[sportKey] = [];
         }
       } catch (e) {
@@ -2017,6 +2121,9 @@ async function refreshTips() {
   await fetchBSDPredictions();
   // Fetch API-Football predictions (6-algorithm Poisson, free 100/day)
   await fetchAPIFootballPredictions();
+  // Fetch ESPN non-soccer fixtures (free, no API key — used when odds-api is down)
+  var hasNonSoccerOdds = SPORTS.some(function(s) { return !s.key.startsWith('soccer_') && s.key !== 'darts_pdc' && s.key !== 'horse_racing' && cachedOdds[s.key] && cachedOdds[s.key].length > 0; });
+  if (!hasNonSoccerOdds) await fetchESPNNonSoccerFixtures();
   var allTips = [];
   if (cachedRacingEvents && cachedRacingEvents.length > 0) {
     var racingTips = [];
@@ -2054,7 +2161,13 @@ async function refreshTips() {
     if (sport.key === 'darts_pdc' && cachedDartsFixtures.length > 0) {
       for (var di = 0; di < cachedDartsFixtures.length; di++) { var tip = buildDartsTip(cachedDartsFixtures[di]); if (tip) allTips.push(tip); }
     }
-    // Non-soccer without odds: skip (no reliable data source)
+    // Non-soccer without odds: use ESPN fixtures
+    if (!hasOdds && cachedESPNNonSoccer[sport.key] && cachedESPNNonSoccer[sport.key].length > 0) {
+      for (var ei = 0; ei < cachedESPNNonSoccer[sport.key].length; ei++) {
+        var eTip = buildESPNFixtureTip(cachedESPNNonSoccer[sport.key][ei], sport.key);
+        if (eTip) allTips.push(eTip);
+      }
+    }
   }
   // BSD STANDALONE: When no soccer odds available, generate tips directly from BSD predictions
   var hasSoccerOdds = SPORTS.some(function(s) { return s.key.startsWith('soccer_') && cachedOdds[s.key] && cachedOdds[s.key].length > 0; });
