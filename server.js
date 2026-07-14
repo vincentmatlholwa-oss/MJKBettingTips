@@ -3641,7 +3641,7 @@ async function handleTelegramUpdate(update) {
       '/bankers — Highest confidence picks (80%+)\n' +
       '/all — Full list of upcoming tips\n' +
       '/sport soccer — Tips for a specific sport\n' +
-      '   Sports: soccer, tennis, nfl, nrl, mlb, afl, cricket\n' +
+      '   Sports: soccer, tennis, nfl, nrl, mlb, afl, cricket, mma/ufc, darts, horse racing\n' +
       '/stats — Overall win rate\n' +
       '/results — Recent results\n\n' +
       'Natural language: just type "tips", "bankers", "today", or a sport name.\n\n' +
@@ -3695,7 +3695,7 @@ async function handleTelegramUpdate(update) {
   if (textLower.startsWith('/sport') || textLower.startsWith('/sport@mjk_bettingtips_bot')) {
     var parts = msg.text.trim().split(/\s+/);
     var query = (parts[1] || '').toLowerCase().replace(/@mjk_bettingtips_bot/gi, '');
-    if (!query) { await sendTelegram(chatId, 'Usage: /sport <name>\nExample: /sport soccer\n\nSports: soccer, tennis, nfl, nrl, mlb, afl, cricket'); return; }
+    if (!query) { await sendTelegram(chatId, 'Usage: /sport <name>\nExample: /sport soccer\n\nSports: soccer, tennis, nfl, nrl, mlb, afl, cricket, mma, darts, horse racing'); return; }
     var sportMap = {
       'soccer': 'soccer', 'football': 'soccer', 'epl': 'soccer_epl', 'fifa': 'soccer_fifa',
       'tennis': 'tennis', 'wimbledon': 'tennis',
@@ -3704,6 +3704,8 @@ async function handleTelegramUpdate(update) {
       'mlb': 'baseball', 'baseball': 'baseball',
       'afl': 'aussierules', 'aussie rules': 'aussierules', 'australian football': 'aussierules',
       'cricket': 'cricket', 't20': 'cricket',
+      'mma': 'mma', 'ufc': 'mma', 'boxing': 'mma', 'fight': 'mma',
+      'darts': 'darts', 'pdc': 'darts', 'premier league darts': 'darts',
       'horse': 'horse_racing', 'horse racing': 'horse_racing', 'racing': 'horse_racing'
     };
     var matchKey = sportMap[query] || query;
