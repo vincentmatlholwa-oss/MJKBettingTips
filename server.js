@@ -64,6 +64,36 @@ const FB_API_BASE = 'https://api.football-data.org/v4';
 const ODDS_API_KEY = process.env.ODDS_API_KEY || '';
 const ODDS_API_KEY_2 = process.env.ODDS_API_KEY_2 || '';
 const ODDS_API_BASE = 'https://api.the-odds-api.com/v4';
+
+// === ODDS API KEY ROTATION ===
+var oddsKeyExhausted = {};
+var oddsActiveKey = ODDS_API_KEY;
+var oddsKeySwitchDate = '';
+function getOddsApiKey() {
+  var today = new Date().toISOString().split('T')[0];
+  // Reset exhaustion flags daily (credits may refill)
+  if (oddsKeySwitchDate !== today) {
+    oddsKeyExhausted = {};
+    oddsActiveKey = ODDS_API_KEY;
+    oddsKeySwitchDate = today;
+  }
+  // If primary is exhausted and we have a backup, use it
+  if (oddsKeyExhausted[ODDS_API_KEY] && ODDS_API_KEY_2 && !oddsKeyExhausted[ODDS_API_KEY_2]) {
+    oddsActiveKey = ODDS_API_KEY_2;
+  }
+  return oddsActiveKey;
+}
+function markOddsKeyExhausted(key) {
+  oddsKeyExhausted[key] = true;
+  var label = key === ODDS_API_KEY ? 'KEY_1' : 'KEY_2';
+  console.log('[ODDS] ' + label + ' exhausted — switching to backup');
+}
+function oddsKeysAvailable() {
+  // Check if at least one key is not exhausted
+  if (!oddsKeyExhausted[ODDS_API_KEY]) return true;
+  if (ODDS_API_KEY_2 && !oddsKeyExhausted[ODDS_API_KEY_2]) return true;
+  return false;
+}
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const TELEGRAM_GROUP_ID = process.env.TELEGRAM_GROUP_ID || '';
 const WHATSAPP_INSTANCE_ID = process.env.WHATSAPP_INSTANCE_ID || '';
@@ -71,6 +101,8 @@ const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN || '';
 const ADMIN_WHATSAPP = process.env.ADMIN_WHATSAPP || '+27677834591';
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
+const OPENAI_API_BASE = 'https://api.openai.com/v1';
 
 const RESULTS_FILE = path.join(DATA_DIR, 'tracked_results.json');
 const ELO_FILE = path.join(DATA_DIR, 'elo_ratings.json');
@@ -90,17 +122,10 @@ const MODEL_COEFFS_FILE = path.join(DATA_DIR, 'model_coeffs.json');
 const FEATURE_LOG_FILE = path.join(DATA_DIR, 'feature_log.json');
 const SPORT_HEALTH_FILE = path.join(DATA_DIR, 'sport_health.json');
 const CACHED_ODDS_FILE = path.join(DATA_DIR, 'cached_odds.json');
-const RACING_EVENTS_FILE = path.join(DATA_DIR, 'racing_events.json');
 const TG_WARNINGS_FILE = path.join(DATA_DIR, 'tg_warnings.json');
 const TG_LAST_PROMO_FILE = path.join(DATA_DIR, 'tg_last_promo.json');
 const PUSH_SUBS_FILE = path.join(DATA_DIR, 'push_subscriptions.json');
 
-const HORSE_RACING_API_KEY = process.env.HORSE_RACING_API_KEY || ''; // Reserved for future paid API
-const HORSE_RACING_API_BASE = 'https://api.odds-api.net/v1';
-const RACING_JSON_URL = 'https://www.racingandsports.com.au/todays-racing-json-v2';
-const RACING_FORM_BASE = 'https://www.racingandsports.com.au/form-guide';
-const TAB_NEWS_URL = 'https://news.tab.co.za';
-const DARTS_API_KEY = process.env.DARTS_SPORTDEVS_API_KEY || '';
 const SPORTMONKS_API_KEY = process.env.SPORTMONKS_API_KEY || '';
 const SPORTMONKS_API_BASE = 'https://api.sportmonks.com/v3/football';
 const BSD_API_KEY = process.env.BSD_API_KEY || '';
@@ -118,8 +143,8 @@ const DATA_BACKUP_FILES = [
   'tracked_results.json', 'elo_ratings.json', 'calibration.json', 'form_tracker.json',
   'adaptive_weights.json', 'team_stats.json', 'head_to_head.json', 'model_coeffs.json',
   'feature_log.json', 'sport_health.json', 'cached_odds.json', 'match_dates.json',
-  'standings_cache.json', 'sportmonks_fixtures.json', 'darts_fixtures.json',
-  'racing_events.json', 'sport_prefs.json'
+  'standings_cache.json', 'sportmonks_fixtures.json',
+  'sport_prefs.json'
 ];
 
 async function githubGetFile(filePath) {
@@ -202,8 +227,7 @@ const SPORTS = [
   { key: 'baseball_mlb', name: 'MLB', icon: '\u26BE' },
   { key: 'aussierules_afl', name: 'AFL', icon: '\uD83C\uDFC9' },
   { key: 'cricket_international_t20', name: 'T20 Cricket', icon: '\uD83C\uDFCF' },
-  { key: 'mma_mixed_martial_arts', name: 'MMA/UFC', icon: '\uD83E\uDD4A' },
-  { key: 'darts_pdc', name: 'PDC Darts', icon: '\uD83C\uDFAF' }
+  { key: 'mma_mixed_martial_arts', name: 'MMA/UFC', icon: '\uD83E\uDD4A' }
 ];
 
 const COUNTRY_MAP = {
@@ -230,9 +254,7 @@ const COUNTRY_MAP = {
   'baseball_mlb': 'USA',
   'aussierules_afl': 'Australia',
   'cricket_international_t20': 'International',
-  'mma_mixed_martial_arts': 'International',
-  'darts_pdc': 'International',
-  'horse_racing': 'International'
+  'mma_mixed_martial_arts': 'International'
 };
 
 // === Per-sport config for specialized predictions ===
@@ -246,9 +268,7 @@ const SPORT_CONFIG = {
   'baseball_mlb': { hasDraw: false, homeAdv: 1.15, kFactor: 40, formWindow: 5, minConf: 65, maxConf: 90, usePoisson: false, dcRho: 0 },
   'aussierules_afl': { hasDraw: true, homeAdv: 1.15, kFactor: 36, formWindow: 4, minConf: 65, maxConf: 95, usePoisson: false, dcRho: -0.08 },
   'cricket_international_t20': { hasDraw: false, homeAdv: 1.10, kFactor: 36, formWindow: 4, minConf: 65, maxConf: 95, usePoisson: false, dcRho: 0 },
-  'mma_mixed_martial_arts': { hasDraw: false, homeAdv: 1.0, kFactor: 48, formWindow: 3, minConf: 65, maxConf: 95, usePoisson: false, dcRho: 0 },
-  'darts_pdc': { hasDraw: false, homeAdv: 1.0, kFactor: 32, formWindow: 3, minConf: 65, maxConf: 95, usePoisson: false, dcRho: 0 },
-  'horse_racing': { hasDraw: false, homeAdv: 1.0, kFactor: 32, formWindow: 3, minConf: 60, maxConf: 92, usePoisson: false, dcRho: 0 }
+  'mma_mixed_martial_arts': { hasDraw: false, homeAdv: 1.0, kFactor: 48, formWindow: 3, minConf: 65, maxConf: 95, usePoisson: false, dcRho: 0 }
 };
 function getCfg(key) { return SPORT_CONFIG[key] || { hasDraw: true, homeAdv: 1.10, kFactor: 32, formWindow: 5, minConf: 68, maxConf: 96, usePoisson: false, dcRho: 0 }; }
 
@@ -259,10 +279,10 @@ const TIER_DURATIONS = {
 };
 
 const TIERS = {
-  free:  { name: 'Free', tipLimit: 3, earlyAccess: false, bankersOnly: false, sportFiltering: false, accaBuilder: false, roiDashboard: false, telegramAlerts: false, monthlyReport: false, horseRacing: false, apiAccess: false, price: 0 },
-  starter: { name: 'Starter', tipLimit: 10, earlyAccess: false, bankersOnly: false, sportFiltering: false, accaBuilder: false, roiDashboard: false, telegramAlerts: true, monthlyReport: false, horseRacing: false, apiAccess: false, price: 150 },
-  pro: { name: 'Pro', tipLimit: 25, earlyAccess: false, bankersOnly: false, sportFiltering: false, accaBuilder: true, roiDashboard: true, telegramAlerts: true, monthlyReport: false, horseRacing: true, apiAccess: false, price: 400 },
-  elite: { name: 'Elite', tipLimit: 30, earlyAccess: true, bankersOnly: true, sportFiltering: true, accaBuilder: true, roiDashboard: true, telegramAlerts: true, monthlyReport: true, horseRacing: true, apiAccess: true, price: 800 }
+  free:  { name: 'Free', tipLimit: 3, earlyAccess: false, bankersOnly: false, sportFiltering: false, accaBuilder: false, roiDashboard: false, telegramAlerts: false, monthlyReport: false, apiAccess: false, price: 0 },
+  starter: { name: 'Starter', tipLimit: 10, earlyAccess: false, bankersOnly: false, sportFiltering: false, accaBuilder: false, roiDashboard: false, telegramAlerts: true, monthlyReport: false, apiAccess: false, price: 150 },
+  pro: { name: 'Pro', tipLimit: 25, earlyAccess: false, bankersOnly: false, sportFiltering: false, accaBuilder: true, roiDashboard: true, telegramAlerts: true, monthlyReport: false, apiAccess: false, price: 400 },
+  elite: { name: 'Elite', tipLimit: 30, earlyAccess: true, bankersOnly: true, sportFiltering: true, accaBuilder: true, roiDashboard: true, telegramAlerts: true, monthlyReport: true, apiAccess: true, price: 800 }
 };
 
 let teamRatings = {};
@@ -702,10 +722,12 @@ async function sendPushToAll(title, body, url) {
 
 // === LIVE ODDS ===
 async function fetchLiveOdds(sport) {
-  if (!ODDS_API_KEY) return null;
+  var key = getOddsApiKey();
+  if (!key) return null;
   try {
-    var url = ODDS_API_BASE + '/' + sport + '/odds/?apiKey=' + ODDS_API_KEY + '&regions=za&markets=h2h';
+    var url = ODDS_API_BASE + '/' + sport + '/odds/?apiKey=' + key + '&regions=za&markets=h2h';
     var resp = await fetch(url);
+    if (resp.status === 401) { markOddsKeyExhausted(key); return null; }
     if (!resp.ok) return null;
     return await resp.json();
   } catch (e) { return null; }
@@ -1254,7 +1276,6 @@ function buildTipReason(ctx) {
   var isCricket = sportKey.indexOf('cricket') >= 0;
   var isMMA = sportKey.indexOf('mma') >= 0;
   var isMLB = sportKey.indexOf('baseball') >= 0;
-  var isDarts = sportKey.indexOf('darts') >= 0;
 
   // ELO-based strength
   var eloDiff = (ctx.eloH || 1500) - (ctx.eloA || 1500);
@@ -1292,10 +1313,6 @@ function buildTipReason(ctx) {
     if (eloAbs > 150) lines.push(eloFav + ' rated as the stronger team');
     else if (eloAbs > 80) lines.push(eloFav + ' has a slight edge on form');
     else lines.push('Teams are closely matched');
-  } else if (isDarts) {
-    if (eloAbs > 150) lines.push(eloFav + ' has the superior form');
-    else if (eloAbs > 80) lines.push(eloFav + ' slight edge in recent form');
-    else lines.push('Both players in similar form');
   } else {
     // Soccer default
     if (eloAbs > 150) lines.push(eloFav + ' rated significantly stronger (ELO gap ' + eloAbs + ')');
@@ -1421,7 +1438,6 @@ function buildTipReason(ctx) {
     else if (isNFL || isNRL || isAFL) lines.push('Based on team form, strength ratings, and model analysis');
     else if (isCricket) lines.push('Based on team form, player stats, and model analysis');
     else if (isMLB) lines.push('Based on team form, pitching stats, and model analysis');
-    else if (isDarts) lines.push('Based on player form, averages, and model analysis');
     else lines.push('Based on team form, stats, and AI model analysis');
   }
   return lines.join('. ') + '.';
@@ -1904,10 +1920,14 @@ var COMPETITION_CODE_MAP = {
   'soccer_germany_bundesliga': 'BL1',
   'soccer_france_ligue_one': 'FL1',
   'soccer_uefa_champs_league': 'CL',
+  'soccer_uefa_europa_league': 'EL',
   'soccer_netherlands_eredivisie': 'DED',
   'soccer_portugal_liga': 'PPL',
   'soccer_brazil_serie_a': 'BSA',
-  'soccer_scotland_premiership': 'SP1'
+  'soccer_scotland_premiership': 'SP1',
+  'soccer_fifa_world_cup': 'WC',
+  'soccer_turkey_super_lig': 'BSA',
+  'soccer_belgium_first_division_a': 'BSA'
 };
 
 function espnDateStr(date) {
@@ -2094,41 +2114,6 @@ function buildESPNFixtureTip(event, sportKey) {
   };
 }
 
-// === DARTS PDC RESULT CHECKER (SofaScore + dartsrankings — free, no API key) ===
-async function checkDartsPDCResult(tip, home, away, now) {
-  var sources = [
-    'https://api.sofascore.com/api/v1/sport/darts/events/last/0',
-    'https://api.sofascore.com/api/v1/sport/darts/events/last/1'
-  ];
-  for (var si = 0; si < sources.length; si++) {
-    try {
-      var res = await safeFetch(sources[si], { headers: { 'User-Agent': 'Mozilla/5.0 MJKTips/1.0', 'Accept': 'application/json' } }, 8000);
-      if (!res.ok) continue;
-      var data = await res.json();
-      var events = (data && data.events) ? data.events : [];
-      for (var ei = 0; ei < events.length; ei++) {
-        var ev = events[ei];
-        if (!ev.status || ev.status.type !== 'finished') continue;
-        var h = ev.homeTeam ? ev.homeTeam.name : '';
-        var a = ev.awayTeam ? ev.awayTeam.name : '';
-        var nh = normalizeTeamName(h).toLowerCase(), na = normalizeTeamName(a).toLowerCase();
-        var nth = normalizeTeamName(home).toLowerCase(), nta = normalizeTeamName(away).toLowerCase();
-        var matchFound = false;
-        if ((nh.indexOf(nth) >= 0 || nth.indexOf(nh) >= 0) && (na.indexOf(nta) >= 0 || nta.indexOf(na) >= 0)) matchFound = true;
-        if ((nh.indexOf(nta) >= 0 || nta.indexOf(nh) >= 0) && (na.indexOf(nth) >= 0 || nth.indexOf(na) >= 0)) matchFound = true;
-        if (!matchFound) continue;
-        var hScore = ev.homeScore && typeof ev.homeScore.display !== 'undefined' ? parseInt(ev.homeScore.display, 10) : (ev.homeScore && ev.homeScore.current ? parseInt(ev.homeScore.current, 10) : 0);
-        var aScore = ev.awayScore && typeof ev.awayScore.display !== 'undefined' ? parseInt(ev.awayScore.display, 10) : (ev.awayScore && ev.awayScore.current ? parseInt(ev.awayScore.current, 10) : 0);
-        if (hScore === 0 && aScore === 0) continue;
-        applyResultToTip(tip, home, away, hScore, aScore, now);
-        console.log('[RESULTS] Darts PDC (SofaScore): ' + tip.match + ' → ' + hScore + '-' + aScore);
-        return true;
-      }
-    } catch (e) {}
-  }
-  return false;
-}
-
 async function checkResults() {
   const now = new Date();
   const pending = trackedTips.filter(function(t) { return t.result === 'pending' && t.kickoff && new Date(t.kickoff) < new Date(now.getTime() - 2 * 60 * 60 * 1000); });
@@ -2140,12 +2125,6 @@ async function checkResults() {
     try {
       var home, away; var parts = tip.match.split(' vs '); home = parts[0]; away = parts[1];
       var found = false;
-      // Horse racing placeholders with no real pick — mark void
-      if (tip.type === 'horse_racing' && (!tip.pick || tip.pick.indexOf('form guide') >= 0 || tip.odds === 'TBD')) {
-        tip.result = 'void'; tip.checkedAt = now.toISOString(); tip.homeScore = 0; tip.awayScore = 0;
-        console.log('[RESULTS] Void: ' + tip.match + ' (no actual pick)');
-        found = true;
-      }
       // 1) Soccer: try football-data.org per-competition (free tier)
       if (!found && tip.type.startsWith('soccer_') && tip.type !== 'soccer_usa_mls') {
         found = await checkFBCompetitionResult(tip, home, away, now);
@@ -2159,10 +2138,6 @@ async function checkResults() {
       if (!found && tip.type === 'cricket_international_t20') {
         found = await checkCricketResult(tip, home, away, now);
       }
-      // 4) Darts PDC: scrape SofaScore or dartsrankings
-      if (!found && tip.type === 'darts_pdc') {
-        found = await checkDartsPDCResult(tip, home, away, now);
-      }
       // 5) ESPN free API — covers soccer, NFL, MLB, tennis, NFL, NRL, AFL, MMA (has timeout via safeFetch)
       if (!found) {
         found = await checkESPNResult(tip, home, away, now);
@@ -2170,16 +2145,20 @@ async function checkResults() {
       // 6) the-odds-api scores (has credits issues — use safeFetch with 8s timeout)
       if (!found) {
         try {
-          var res = await safeFetch(ODDS_API_BASE + '/sports/' + tip.type + '/scores?apiKey=' + ODDS_API_KEY + '&daysFrom=2', {}, 8000);
-          if (res.ok) {
-            var scores = await res.json();
-            if (scores && scores.length > 0) {
-              var match = scores.find(function(s) { return normalizeTeamName(s.home_team) === normalizeTeamName(home) && normalizeTeamName(s.away_team) === normalizeTeamName(away) && s.completed === true && s.scores; });
-              if (match && match.scores) {
-                var hScore = parseInt(match.scores[0] ? match.scores[0].score : (match.scores.home || 0), 10);
-                var aScore = parseInt(match.scores[1] ? match.scores[1].score : (match.scores.away || 0), 10);
-                applyResultToTip(tip, home, away, hScore, aScore, now);
-                found = true;
+          var oddsKeyScores = getOddsApiKey();
+          if (oddsKeyScores) {
+            var res = await safeFetch(ODDS_API_BASE + '/sports/' + tip.type + '/scores?apiKey=' + oddsKeyScores + '&daysFrom=2', {}, 8000);
+            if (res.status === 401) { markOddsKeyExhausted(oddsKeyScores); }
+            else if (res.ok) {
+              var scores = await res.json();
+              if (scores && scores.length > 0) {
+                var match = scores.find(function(s) { return normalizeTeamName(s.home_team) === normalizeTeamName(home) && normalizeTeamName(s.away_team) === normalizeTeamName(away) && s.completed === true && s.scores; });
+                if (match && match.scores) {
+                  var hScore = parseInt(match.scores[0] ? match.scores[0].score : (match.scores.home || 0), 10);
+                  var aScore = parseInt(match.scores[1] ? match.scores[1].score : (match.scores.away || 0), 10);
+                  applyResultToTip(tip, home, away, hScore, aScore, now);
+                  found = true;
+                }
               }
             }
           }
@@ -2213,29 +2192,39 @@ async function refreshTips() {
   await fetchStandingsData();
   console.log('[REFRESH] Starting... oddsFetchDate=' + oddsFetchDate + ' today=' + today);
   if (oddsFetchDate !== today) {
-    var oddsKeyInUse = ODDS_API_KEY;
-    var oddsKey2Avail = !!ODDS_API_KEY_2;
-    var primaryExhausted = false;
-    for (var si = 0; si < SPORTS.length; si++) {
-      try {
-        var sportKey = SPORTS[si].key;
-        // If primary key exhausted and we have a backup, use it
-        if (primaryExhausted && oddsKey2Avail) oddsKeyInUse = ODDS_API_KEY_2;
-        var url = ODDS_API_BASE + '/sports/' + sportKey + '/odds?apiKey=' + oddsKeyInUse + '&regions=us,uk,eu&markets=h2h,spreads,totals';
-        var res = await safeFetch(url, {}, 10000);
-        // Track remaining credits from headers
-        var rem = res.headers.get('x-requests-remaining');
-        if (rem !== null && si === 0) console.log('[ODDS] API credits remaining: ' + rem);
-        if (res.status === 401 || res.status === 429) {
-          var txt = await res.text();
-          if (!primaryExhausted && oddsKey2Avail) {
-            console.log('[ODDS] Primary key EXHAUSTED (HTTP ' + res.status + '), switching to backup key...');
-            primaryExhausted = true;
-            si--; // retry this sport with backup key
-            continue;
-          }
-          console.log('[ODDS] ' + sportKey + ' FAILED HTTP ' + res.status + ': ' + txt.slice(0, 200));
-          cachedOdds[sportKey] = [];
+    var bothKeysDead = !oddsKeysAvailable();
+    if (bothKeysDead) {
+      console.log('[ODDS] Both API keys exhausted — using cached odds');
+    } else {
+      for (var si = 0; si < SPORTS.length; si++) {
+        try {
+          var sportKey = SPORTS[si].key;
+          var oddsKeyInUse = getOddsApiKey();
+          if (!oddsKeyInUse) { cachedOdds[sportKey] = []; continue; }
+          var url = ODDS_API_BASE + '/sports/' + sportKey + '/odds?apiKey=' + oddsKeyInUse + '&regions=us,uk,eu&markets=h2h,spreads,totals';
+          var res = await safeFetch(url, {}, 10000);
+          // Track remaining credits from headers
+          var rem = res.headers.get('x-requests-remaining');
+          if (rem !== null && si === 0) console.log('[ODDS] API credits remaining: ' + rem);
+          if (res.status === 401 || res.status === 429) {
+            markOddsKeyExhausted(oddsKeyInUse);
+            var backupKey = getOddsApiKey();
+            if (backupKey !== oddsKeyInUse && backupKey) {
+              // Retry this sport with backup key
+              var url2 = ODDS_API_BASE + '/sports/' + sportKey + '/odds?apiKey=' + backupKey + '&regions=us,uk,eu&markets=h2h,spreads,totals';
+              var res2 = await safeFetch(url2, {}, 10000);
+              if (res2.status === 401 || res2.status === 429) {
+                markOddsKeyExhausted(backupKey);
+                cachedOdds[sportKey] = [];
+              } else if (res2.ok) {
+                cachedOdds[sportKey] = await res2.json();
+                console.log('[ODDS] ' + sportKey + ': ' + cachedOdds[sportKey].length + ' matches (backup key)');
+              } else {
+                cachedOdds[sportKey] = [];
+              }
+            } else {
+              cachedOdds[sportKey] = [];
+            }
         } else if (res.ok) {
           cachedOdds[sportKey] = await res.json();
           console.log('[ODDS] ' + sportKey + ': ' + cachedOdds[sportKey].length + ' matches');
@@ -2247,6 +2236,7 @@ async function refreshTips() {
       } catch (e) {
         console.log('[ODDS] ' + SPORTS[si].key + ' ERROR: ' + (e.message || e).slice(0, 200));
         cachedOdds[SPORTS[si].key] = [];
+      }
       }
     }
     oddsFetchDate = today;
@@ -2262,10 +2252,6 @@ async function refreshTips() {
       saveCachedOdds();
     }
   }
-  // Fetch horse racing (free, no API key needed)
-  await fetchHorseRacing();
-  // Fetch darts fixtures
-  await fetchDartsFixtures();
   // Fetch SportMonks football fixtures
   await fetchSportMonksFixtures();
   // Fetch BSD CatBoost ML predictions (free, unlimited)
@@ -2273,18 +2259,9 @@ async function refreshTips() {
   // Fetch API-Football predictions (6-algorithm Poisson, free 100/day)
   await fetchAPIFootballPredictions();
   // Fetch ESPN non-soccer fixtures (free, no API key — used when odds-api is down)
-  var hasNonSoccerOdds = SPORTS.some(function(s) { return !s.key.startsWith('soccer_') && s.key !== 'darts_pdc' && s.key !== 'horse_racing' && cachedOdds[s.key] && cachedOdds[s.key].length > 0; });
+  var hasNonSoccerOdds = SPORTS.some(function(s) { return !s.key.startsWith('soccer_') && cachedOdds[s.key] && cachedOdds[s.key].length > 0; });
   if (!hasNonSoccerOdds) await fetchESPNNonSoccerFixtures();
   var allTips = [];
-  if (cachedRacingEvents && cachedRacingEvents.length > 0) {
-    var racingTips = [];
-    for (var ri = 0; ri < cachedRacingEvents.length; ri++) {
-      var rt = buildHorseRacingTip(cachedRacingEvents[ri]);
-      if (rt) racingTips.push(rt);
-    }
-    console.log('[HORSE] Generated ' + racingTips.length + ' tips from ' + cachedRacingEvents.length + ' races');
-    allTips = allTips.concat(racingTips);
-  }
   for (var si = 0; si < SPORTS.length; si++) {
     var sport = SPORTS[si];
     var hasOdds = cachedOdds[sport.key] && cachedOdds[sport.key].length > 0;
@@ -2307,10 +2284,6 @@ async function refreshTips() {
         var tip = sport.key === 'baseball_mlb' ? buildBaseballTip(cachedOdds[sport.key][oi], sport) : buildNonSoccerTip(cachedOdds[sport.key][oi], sport);
         if (tip) allTips.push(tip);
       }
-    }
-    // Darts: use scraped fixtures with our own AI
-    if (sport.key === 'darts_pdc' && cachedDartsFixtures.length > 0) {
-      for (var di = 0; di < cachedDartsFixtures.length; di++) { var tip = buildDartsTip(cachedDartsFixtures[di]); if (tip) allTips.push(tip); }
     }
     // Non-soccer without odds: use ESPN fixtures
     if (!hasOdds && cachedESPNNonSoccer[sport.key] && cachedESPNNonSoccer[sport.key].length > 0) {
@@ -2343,14 +2316,18 @@ async function refreshTips() {
     }
     console.log('[SPORTMONKS] Generated tips from ' + cachedSportMonksFixtures.length + ' fixtures');
   }
-  // Gemini batch analysis — enrich tips with AI insights
-  if (GEMINI_API_KEY && allTips.length > 0) {
+  // AI reason rewrite — batch rewrite all tips into natural language
+  if (OPENAI_API_KEY && allTips.length > 0) {
     try {
-      var geminiMatches = allTips.slice(0, 10).map(function(t) {
+      await openaiRewriteReasonsBatch(allTips.slice(0, 20));
+    } catch (e) { console.log('[OPENAI] Batch rewrite failed:', e.message); }
+  } else if (GEMINI_API_KEY && allTips.length > 0) {
+    try {
+      var aiMatches = allTips.slice(0, 10).map(function(t) {
         var parts = t.match.split(' vs ');
         return { home: parts[0] || '', away: parts[1] || '', sport: t.sport, league: t.league, eloHome: 1500, eloAway: 1500, formHome: 0, formAway: 0 };
       });
-      var insights = await geminiBatchAnalysis(geminiMatches);
+      var insights = await geminiBatchAnalysis(aiMatches);
       for (var gi = 0; gi < allTips.length; gi++) {
         var insight = insights[allTips[gi].match];
         if (insight) allTips[gi].reason = allTips[gi].reason + ' AI: ' + insight;
@@ -2401,468 +2378,6 @@ function mapFootballDataFixture(match) {
   var comp = match.competition ? match.competition.name : 'International';
   var stage = match.stage ? match.stage.replace(/_/g, ' ').replace(/\b\w/g, function(l) { return l.toUpperCase(); }) : '';
   return { homeTeam: home, awayTeam: away, league: comp + (stage ? ' \u2014 ' + stage : ''), kickoff: match.utcDate || new Date().toISOString() };
-}
-
-// === HORSE RACING (HKJC — free, no API key) ===
-var cachedRacingEvents = [];
-var cachedTabSelections = {}; // Parsed TAB news race-by-race selections { 'Greyville': { 1: [{no:4,name:'Molten Rock'},...], ... } }
-var tabSelectionsDate = '';
-function loadRacingEvents() { cachedRacingEvents = loadJSON(RACING_EVENTS_FILE, []); }
-function saveRacingEvents() { saveJSON(RACING_EVENTS_FILE, cachedRacingEvents); }
-
-// Scrape TAB news for daily race-by-race selections (horse names + numbers)
-async function fetchTabSelections() {
-  var today = new Date().toISOString().slice(0, 10);
-  if (tabSelectionsDate === today && Object.keys(cachedTabSelections).length > 0) return;
-  try {
-    // Step 1: Fetch TAB news homepage to find latest racing article
-    var homeRes = await fetch(TAB_NEWS_URL, { timeout: 10000, headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' } });
-    if (!homeRes.ok) return;
-    var homeHtml = await homeRes.text();
-    // Find article links that contain racing selections (look for "Race 1:" pattern hints — articles about today's racing)
-    var articleUrls = [];
-    var linkRegex = /href="(https?:\/\/news\.tab\.co\.za\/[^"]+\/)"/gi;
-    var match;
-    while ((match = linkRegex.exec(homeHtml)) !== null) {
-      if (articleUrls.indexOf(match[1]) === -1) articleUrls.push(match[1]);
-    }
-    // Also try relative links
-    var relRegex = /href="(\/[^"]+\/)"/gi;
-    while ((match = relRegex.exec(homeHtml)) !== null) {
-      var full = TAB_NEWS_URL + match[1];
-      if (articleUrls.indexOf(full) === -1) articleUrls.push(full);
-    }
-
-    // Step 2: Try each article until we find one with race-by-race selections
-    for (var ai = 0; ai < Math.min(articleUrls.length, 8); ai++) {
-      try {
-        var artRes = await fetch(articleUrls[ai], { timeout: 8000, headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' } });
-        if (!artRes.ok) continue;
-        var artHtml = await artRes.text();
-        // Strip HTML tags to get plain text
-        var text = artHtml.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-        // Look for race-by-race selections pattern: "Race N: NN Horse Name, NN Horse Name"
-        var racePattern = /Race\s+(\d{1,2})\s*:\s*((?:\d{1,2}\s+[A-Z][a-zA-Z\s'.-]+?)(?:,\s*\d{1,2}\s+[A-Z][a-zA-Z\s'.-]+?)*)/gi;
-        var selections = {};
-        var venue = '';
-        // Try to extract venue from article title or content
-        var venueMatch = text.match(/(?:at|Racecourse?)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/i) || artHtml.match(/<title[^>]*>([^<]+)/i);
-        if (venueMatch) venue = venueMatch[1] || '';
-        // Normalize common venue names
-        var venueLower = venue.toLowerCase();
-        if (venueLower.indexOf('greyville') >= 0 || venueLower.indexOf('grey') >= 0) venue = 'Greyville';
-        else if (venueLower.indexOf('turffontein') >= 0 || venueLower.indexOf('turf') >= 0) venue = 'Turffontein';
-        else if (venueLower.indexOf('kenilworth') >= 0) venue = 'Kenilworth';
-        else if (venueLower.indexOf('fairview') >= 0) venue = 'Fairview';
-        else if (venueLower.indexOf('vaal') >= 0) venue = 'Vaal';
-        else if (venueLower.indexOf('scottsville') >= 0) venue = 'Scottsville';
-
-        var raceMatch;
-        while ((raceMatch = racePattern.exec(text)) !== null) {
-          var raceNo = parseInt(raceMatch[1]);
-          var picks = raceMatch[2].split(',').map(function(p) {
-            p = p.trim();
-            var numMatch = p.match(/^(\d{1,2})\s+(.+)/);
-            if (numMatch) return { no: parseInt(numMatch[1]), name: numMatch[2].trim() };
-            return null;
-          }).filter(Boolean);
-          if (picks.length > 0) selections[raceNo] = picks;
-        }
-        // Also extract BEST BET and VALUE BET
-        var bestBetMatch = text.match(/BEST\s+BET\s*(?:\([^)]*\))?\s*[:\s]*Race\s+(\d{1,2})\s*:\s*(\d{1,2})\s+([A-Z][a-zA-Z\s'.-]+)/i);
-        var valueBetMatch = text.match(/VALUE\s+BET\s*(?:\([^)]*\))?\s*[:\s]*Race\s+(\d{1,2})\s*:\s*(\d{1,2})\s+([A-Z][a-zA-Z\s'.-]+)/i);
-        if (bestBetMatch && selections[parseInt(bestBetMatch[1])]) {
-          var bbRace = parseInt(bestBetMatch[1]);
-          var bbNo = parseInt(bestBetMatch[2]);
-          var bbName = bestBetMatch[3].trim();
-          if (!selections[bbRace].find(function(s) { return s.no === bbNo; })) {
-            selections[bbRace].unshift({ no: bbNo, name: bbName });
-          }
-          selections._bestBet = { race: bbRace, no: bbNo, name: bbName };
-        }
-        if (valueBetMatch && selections[parseInt(valueBetMatch[1])]) {
-          var vbRace = parseInt(valueBetMatch[1]);
-          var vbNo = parseInt(valueBetMatch[2]);
-          var vbName = valueBetMatch[3].trim();
-          selections._valueBet = { race: vbRace, no: vbNo, name: vbName };
-        }
-
-        if (Object.keys(selections).length > 0) {
-          cachedTabSelections[venue || 'Unknown'] = selections;
-          console.log('[TAB] Parsed selections for ' + (venue || 'Unknown') + ': ' + Object.keys(selections).filter(function(k) { return k !== '_bestBet' && k !== '_valueBet'; }).length + ' races');
-        }
-      } catch (e) { /* skip failed article */ }
-    }
-    if (Object.keys(cachedTabSelections).length > 0) {
-      tabSelectionsDate = today;
-      console.log('[TAB] Total venues with selections: ' + Object.keys(cachedTabSelections).length);
-    }
-  } catch (e) { console.log('[TAB] Error: ' + (e.message || e)); }
-}
-
-async function fetchHorseRacing() {
-  // First, scrape TAB news for daily expert selections (horse names)
-  await fetchTabSelections();
-
-  // Source 1: racingandsports.com.au free JSON (no auth required)
-  try {
-    var res = await fetch(RACING_JSON_URL, {
-      timeout: 10000,
-      headers: { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0' }
-    });
-    if (res.ok) {
-      var data = await res.json();
-      var races = [];
-      // Priority countries for SA user
-      var priorityCountries = ['SAF', 'AUS', 'GB', 'IRE'];
-      for (var di = 0; di < data.length; di++) {
-        var discipline = data[di];
-        if (discipline.Discipline !== 'T') continue; // Thoroughbred only
-        for (var ci = 0; ci < discipline.Countries.length; ci++) {
-          var country = discipline.Countries[ci];
-          for (var mi = 0; mi < country.Meetings.length; mi++) {
-            var meeting = country.Meetings[mi];
-            if (meeting.HasResults || meeting.MeetingClosed) continue;
-            var remainingMin = meeting.Remaining || 0;
-            if (remainingMin < 0 || remainingMin > 240) continue; // Skip past races or >4hr away
-            var kickoffTime = new Date(Date.now() + remainingMin * 60000).toISOString();
-            var priority = priorityCountries.indexOf(country.countryCode) >= 0;
-            races.push({
-              id: 'ras-' + country.countryCode + '-' + meeting.Course.replace(/\s+/g, '-').toLowerCase() + '-R' + meeting.RaceNumber,
-              track: meeting.Course,
-              name: meeting.Course + ' R' + meeting.RaceNumber,
-              country: country.CountryName,
-              countryCode: country.countryCode,
-              raceNumber: meeting.RaceNumber,
-              time: kickoffTime,
-              kickoff: kickoffTime,
-              remaining: remainingMin,
-              runners: [],
-              priority: priority,
-              formUrl: meeting.FormGuideUrl || '',
-              resultUrl: meeting.PostMeetingUrl || ''
-            });
-          }
-        }
-      }
-      // Sort: priority countries first, then by time
-      races.sort(function(a, b) {
-        if (a.priority !== b.priority) return b.priority ? 1 : -1;
-        return new Date(a.time).getTime() - new Date(b.time).getTime();
-      });
-      // Take top 15 races
-      races = races.slice(0, 15);
-      // Merge TAB selections into runners for SA races
-      if (Object.keys(cachedTabSelections).length > 0) {
-        for (var ri = 0; ri < races.length; ri++) {
-          var race = races[ri];
-          if (race.countryCode !== 'SAF') continue;
-          var trackKey = race.track;
-          // Try exact match, then partial match
-          var tabVenue = cachedTabSelections[trackKey];
-          if (!tabVenue) {
-            var trackLower = trackKey.toLowerCase();
-            var keys = Object.keys(cachedTabSelections);
-            for (var ki = 0; ki < keys.length; ki++) {
-              if (keys[ki].toLowerCase().indexOf(trackLower) >= 0 || trackLower.indexOf(keys[ki].toLowerCase()) >= 0) {
-                tabVenue = cachedTabSelections[keys[ki]];
-                break;
-              }
-            }
-          }
-          if (tabVenue && tabVenue[race.raceNumber]) {
-            race.runners = tabVenue[race.raceNumber].map(function(s) {
-              return { name: s.name, horseNo: s.no, odds: 0, book: 'TAB Expert' };
-            });
-            // Mark best/value bet
-            if (tabVenue._bestBet && tabVenue._bestBet.race === race.raceNumber) {
-              race.bestBet = tabVenue._bestBet;
-            }
-            if (tabVenue._valueBet && tabVenue._valueBet.race === race.raceNumber) {
-              race.valueBet = tabVenue._valueBet;
-            }
-          }
-        }
-      }
-      if (races.length > 0) {
-        cachedRacingEvents = races;
-        saveRacingEvents();
-        var saWithRunners = races.filter(function(r) { return r.countryCode === 'SAF' && r.runners.length > 0; }).length;
-        console.log('[HORSE] Fetched ' + races.length + ' races from racingandsports.com.au (' + races.filter(function(r) { return r.countryCode === 'SAF'; }).length + ' SA, ' + saWithRunners + ' with TAB selections)');
-        return;
-      }
-    }
-  } catch (e) { console.log('[HORSE] RacingAndSports error: ' + (e.message || e)); }
-
-  // Source 2: Try odds-api.net (if key is configured)
-  if (HORSE_RACING_API_KEY) {
-    try {
-      var res2 = await fetch('https://api.odds-api.net/v1/racing/events?date=' + new Date().toISOString().slice(0, 10), {
-        headers: { 'X-API-Key': HORSE_RACING_API_KEY },
-        timeout: 10000
-      });
-      if (res2.ok) {
-        var events2 = await res2.json();
-        if (Array.isArray(events2) && events2.length > 0) {
-          cachedRacingEvents = events2.map(function(e) {
-            return {
-              id: e.id || '',
-              track: e.venue || e.title || 'Horse Racing',
-              name: e.title || 'Race',
-              time: e.commence_time || '',
-              kickoff: e.commence_time || '',
-              runners: (e.runners || []).map(function(r) { return { name: r.name, odds: r.odds || 0, book: '' }; })
-            };
-          }).filter(function(r) { return r.runners.length >= 2; });
-          saveRacingEvents();
-          console.log('[HORSE] Fetched ' + cachedRacingEvents.length + ' races from odds-api.net');
-          return;
-        }
-      }
-    } catch (e) { console.log('[HORSE] odds-api.net error: ' + (e.message || e)); }
-  }
-
-  console.log('[HORSE] No racing data available');
-  loadRacingEvents();
-}
-
-function buildHorseRacingTip(event) {
-  var track = event.track || '';
-  var name = event.name || 'Race';
-  var dist = event.distance ? ' (' + event.distance + 'm)' : '';
-  var time = event.time || event.kickoff || '';
-  var country = event.country || '';
-  var raceNum = event.raceNumber || '';
-  var formUrl = event.formUrl || '';
-  var runners = event.runners || [];
-  var bestBet = event.bestBet || null;
-  var valueBet = event.valueBet || null;
-
-  if (!time || new Date(time).getTime() < Date.now()) return null;
-
-  var isSA = event.countryCode === 'SAF';
-  var kickoffDate = new Date(time);
-  var timeStr = kickoffDate.toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg', hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' });
-  var countryFlag = isSA ? '\uD83C\uDDFF\uD83C\uDDE6' : (event.countryCode === 'AUS' ? '\uD83C\uDDE6\uD83C\uDDFA' : '\uD83C\uDDEC\uD83C\uDDE7');
-
-  // If we have runners with odds, use the odds-based approach
-  if (runners.length >= 2 && runners.some(function(r) { return parseFloat(r.odds) > 1; })) {
-    var cfg = getCfg('horse_racing');
-    var pick = null, bestProb = 0, bestOdds = 0, bestBook = '';
-    for (var i = 0; i < runners.length; i++) {
-      var r = runners[i];
-      var odds = parseFloat(r.odds) || 0;
-      if (odds <= 1) continue;
-      var prob = 1 / odds;
-      if (prob > bestProb) {
-        bestProb = prob;
-        bestOdds = odds;
-        pick = r.name || 'Runner ' + (i + 1);
-        bestBook = r.book || '';
-      }
-    }
-    if (pick && bestOdds > 0) {
-      var conf = Math.min(cfg.maxConf, Math.max(cfg.minConf, Math.round(bestProb * 100)));
-      if (conf >= cfg.minConf) {
-        return {
-          type: 'horse_racing', sport: 'Horse Racing', icon: '\uD83C\uDFC7',
-          match: countryFlag + ' ' + (track ? track + ' — ' : '') + 'Race ' + raceNum + dist,
-          league: track || 'Horse Racing', country: country || 'International',
-          marketType: 'h2h', market: 'Race Winner', marketLine: null,
-          kickoff: time, pick: pick + ' to Win', odds: bestOdds.toFixed(2),
-          conf: conf, realOdds: null, bookmaker: bestBook, valueBet: false,
-          reason: 'AI Horse Racing — Form analysis (' + runners.length + ' runners, favourite)',
-          features: [0, 0, 0, 0, 0, 0, 0, 1]
-        };
-      }
-    }
-  }
-
-  // If we have TAB expert selections (horse names but no odds), use expert picks
-  if (runners.length >= 2 && runners[0].name) {
-    var cfg2 = getCfg('horse_racing');
-    // The first runner in the list is the expert's top pick
-    var topPick = runners[0];
-    var pickName = (topPick.horseNo ? '#' + topPick.horseNo + ' ' : '') + topPick.name;
-    // Count all runners listed
-    var runnerCount = runners.length;
-    // Build reason with all listed runners
-    var runnerList = runners.map(function(r) {
-      return (r.horseNo ? r.horseNo + ' ' : '') + r.name;
-    }).join(', ');
-    // Higher confidence for SA races with expert picks
-    var conf = isSA ? 78 : 70;
-    // Bonus if this is a best bet
-    if (bestBet) {
-      pickName = '\u2B50 ' + (bestBet.no ? '#' + bestBet.no + ' ' : '') + bestBet.name + ' (BEST BET)';
-      conf = Math.min(cfg2.maxConf, conf + 5);
-    }
-    var reasonText = 'TAB Expert Picks (' + runnerCount + ' runners) \u2014 ' + runnerList;
-    if (valueBet) {
-      reasonText += ' | Value: #' + valueBet.no + ' ' + valueBet.name;
-    }
-
-    return {
-      type: 'horse_racing', sport: 'Horse Racing', icon: '\uD83C\uDFC7',
-      match: countryFlag + ' ' + (track ? track + ' — ' : '') + 'Race ' + raceNum + dist,
-      league: track || 'Horse Racing', country: country || 'International',
-      marketType: 'h2h', market: 'Race Winner', marketLine: null,
-      kickoff: time, pick: pickName, odds: 'Expert Pick',
-      conf: conf, realOdds: null, bookmaker: 'TAB', valueBet: !!valueBet,
-      reason: reasonText,
-      features: [0, 0, 0, 0, 0, 0, 0, 1]
-    };
-  }
-
-  // Fallback: Race card without any runner data — don't create a placeholder tip
-  return null;
-}
-
-// === DARTS (SportDevs free API: 300 req/day) ===
-var cachedDartsFixtures = [];
-var dartsFetchDate = '';
-const DARTS_FIXTURES_FILE = path.join(DATA_DIR, 'darts_fixtures.json');
-
-function loadDartsFixtures() { cachedDartsFixtures = loadJSON(DARTS_FIXTURES_FILE, []); }
-function saveDartsFixtures() { saveJSON(DARTS_FIXTURES_FILE, cachedDartsFixtures); }
-
-async function fetchDartsFixtures() {
-  var today = new Date().toISOString().slice(0, 10);
-  if (dartsFetchDate === today && cachedDartsFixtures.length > 0) return;
-  loadDartsFixtures();
-  if (dartsFetchDate === today && cachedDartsFixtures.length > 0) return;
-
-  // Strategy 1: The Odds API — check if darts is in season
-  try {
-    if (ODDS_API_KEY) {
-      var url = ODDS_API_BASE + '/sports/upcoming?apiKey=' + ODDS_API_KEY;
-      var res = await fetch(url, { timeout: 8000 });
-      if (res.ok) {
-        var upcoming = await res.json();
-        var dartsEvents = upcoming.filter(function(e) { return e.sport_key && e.sport_key.indexOf('darts') >= 0; });
-        if (dartsEvents.length > 0) {
-          cachedDartsFixtures = dartsEvents.map(function(e) {
-            var bestOdds = null;
-            if (e.bookmakers && e.bookmakers.length > 0) {
-              for (var bi = 0; bi < e.bookmakers.length; bi++) {
-                var h2h = e.bookmakers[bi].markets && e.bookmakers[bi].markets.find(function(m) { return m.key === 'h2h'; });
-                if (h2h && h2h.outcomes && h2h.outcomes.length >= 2) {
-                  bestOdds = { home: h2h.outcomes[0].price, away: h2h.outcomes[1].price, book: e.bookmakers[bi].title };
-                  break;
-                }
-              }
-            }
-            return {
-              id: e.id,
-              home: e.home_team || 'Player 1',
-              away: e.away_team || 'Player 2',
-              league: e.sport_title || 'Darts',
-              kickoff: e.commence_time || '',
-              odds: bestOdds
-            };
-          });
-          dartsFetchDate = today;
-          saveDartsFixtures();
-          console.log('[DARTS] Odds API: ' + cachedDartsFixtures.length + ' upcoming events');
-          return;
-        }
-      }
-    }
-  } catch (e) { console.log('[DARTS] Odds API error: ' + (e.message || e).slice(0, 150)); }
-
-  // Strategy 2: Scrape darts fixtures from public sources
-  var scrapeSources = [
-    { url: 'https://www.dartsrankings.com/api/matches', parse: function(d) { return Array.isArray(d) ? d : []; } },
-    { url: 'https://api.sofascore.com/api/v1/sport/darts/events/next/0', parse: function(d) { return (d && d.events) ? d.events : []; } }
-  ];
-  for (var si = 0; si < scrapeSources.length; si++) {
-    try {
-      var src = scrapeSources[si];
-      var scrapeRes = await fetch(src.url, { timeout: 8000, headers: { 'User-Agent': 'Mozilla/5.0 MJKTips/1.0', 'Accept': 'application/json' } });
-      if (scrapeRes.ok) {
-        var scrapeData = await scrapeRes.json();
-        var matches = src.parse(scrapeData);
-        if (matches.length > 0) {
-          cachedDartsFixtures = matches.slice(0, 30).map(function(m) {
-            var home = m.home_team || m.homeTeam?.name || m.participants?.[0]?.name || m.player1 || m.home || 'TBD';
-            var away = m.away_team || m.awayTeam?.name || m.participants?.[1]?.name || m.player2 || m.away || 'TBD';
-            var kickoff = m.start_time || m.date || m.kickoff || m.startTimestamp || '';
-            if (kickoff && typeof kickoff === 'number') kickoff = new Date(kickoff * 1000).toISOString();
-            return { id: m.id || '', home: home, away: away, league: m.tournament?.name || m.event || m.league || 'PDC Darts', kickoff: kickoff, odds: null };
-          }).filter(function(m) { return m.home !== 'TBD' && m.away !== 'TBD'; });
-          if (cachedDartsFixtures.length > 0) {
-            dartsFetchDate = today;
-            saveDartsFixtures();
-            console.log('[DARTS] Scraped: ' + cachedDartsFixtures.length + ' fixtures from source ' + (si + 1));
-            return;
-          }
-        }
-      }
-    } catch (e) {}
-  }
-
-  // Strategy 3: Use cached data if fresh enough (< 2 days old)
-  if (cachedDartsFixtures.length > 0) {
-    console.log('[DARTS] Using cached fixtures (' + cachedDartsFixtures.length + ' fixtures)');
-    dartsFetchDate = today;
-    return;
-  }
-
-  dartsFetchDate = today;
-  console.log('[DARTS] No data sources available');
-}
-
-function buildDartsTip(fixture) {
-  var sportKey = 'darts_pdc';
-  if (disabledSports[sportKey]) return null;
-  var cfg = getCfg(sportKey);
-  var home = fixture.home, away = fixture.away;
-  var kickoff = fixture.kickoff || '';
-  if (!kickoff || new Date(kickoff).getTime() < Date.now()) return null;
-
-  var hElo = getElo(sportKey, home);
-  var aElo = getElo(sportKey, away);
-  var hFm = formModifier(sportKey, home);
-  var aFm = formModifier(sportKey, away);
-  var adjH = Math.max(1000, Math.min(2000, hElo + hFm));
-  var adjA = Math.max(1000, Math.min(2000, aElo + aFm));
-  var prob = expectedScore(adjH, adjA);
-
-  // If we have odds from scrape, use market consensus
-  if (fixture.odds && typeof fixture.odds === 'object') {
-    var oH = parseFloat(fixture.odds.home) || 0;
-    var oA = parseFloat(fixture.odds.away) || 0;
-    if (oH > 1 && oA > 1) {
-      var mH = 1 / oH, mA = 1 / oA;
-      prob = prob * 0.5 + mH * 0.5;
-    }
-  }
-
-  var pick = prob > 0.5 ? home : away;
-  var pickProb = Math.max(prob, 1 - prob);
-  var odds = prob > 0.5 ? (1 / prob).toFixed(2) : (1 / (1 - prob)).toFixed(2);
-
-  var features = buildFeatures(home, away, sportKey);
-  var rawLR = predictLR(sportKey, features);
-  if (rawLR !== null) {
-    pickProb = pickProb * 0.6 + Math.max(rawLR, 1 - rawLR) * 0.4;
-    pick = rawLR > 0.5 ? home : away;
-    odds = (1 / pickProb).toFixed(2);
-  }
-
-  var confidence = confidenceFromProb(pickProb, 0.6);
-  var formNote = (Math.abs(hFm) > 5 || Math.abs(aFm) > 5) ? ' Form ' + (hFm > 0 ? '+' : '') + hFm + 'v' + (aFm > 0 ? '+' : '') + aFm : '';
-  var reason = 'AI Darts' + (rawLR !== null ? ' ML' : '') + ' Elo ' + Math.round(adjH) + 'v' + Math.round(adjA) + formNote;
-
-  return {
-    type: sportKey, sport: 'PDC Darts', icon: '\uD83C\uDFAF',
-    match: home + ' vs ' + away, league: fixture.league || 'PDC Darts',
-    country: 'International', marketType: 'h2h', market: 'Match Winner', marketLine: null,
-    kickoff: kickoff, pick: pick + ' to Win', odds: odds,
-    conf: Math.min(cfg.maxConf, Math.max(cfg.minConf, confidence)),
-    realOdds: null, bookmaker: '', valueBet: false,
-    reason: reason, features: features
-  };
 }
 
 // === SPORTMONKS API (Football data + live scores) ===
@@ -2961,8 +2476,135 @@ async function fetchSportMonksFixtures() {
   }
 }
 
-// === GEMINI AI MATCH ANALYSIS ===
-var geminiAnalysisCache = {};
+// === OPENAI AI MATCH ANALYSIS ===
+var openaiAnalysisCache = {};
+async function openaiMatchAnalysis(home, away, league, sport, eloHome, eloAway, formHome, formAway, oddsHome, oddsAway) {
+  if (!OPENAI_API_KEY) return null;
+  var cacheKey = home + '|' + away + '|' + league;
+  if (openaiAnalysisCache[cacheKey]) return openaiAnalysisCache[cacheKey];
+  try {
+    var systemMsg = 'You are an expert sports betting analyst. Provide sharp, data-driven match analysis. Be specific about key factors that will influence the outcome. Max 3 sentences.';
+    var userMsg = 'Analyze this ' + sport + ' match:\n' +
+      'Match: ' + home + ' vs ' + away + '\n' +
+      'League: ' + league + '\n' +
+      'ELO ratings: ' + home + ' ' + Math.round(eloHome) + ', ' + away + ' ' + Math.round(eloAway) + '\n' +
+      'Recent form: ' + home + ' ' + formHome + ', ' + away + ' ' + formAway + '\n' +
+      (oddsHome ? 'Market odds: ' + home + ' ' + oddsHome + ', ' + away + ' ' + oddsAway + '\n' : '') +
+      'Provide a concise expert analysis.';
+    var body = JSON.stringify({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'system', content: systemMsg }, { role: 'user', content: userMsg }],
+      temperature: 0.4, max_tokens: 200
+    });
+    var res = await fetch(OPENAI_API_BASE + '/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + OPENAI_API_KEY },
+      body: body, signal: AbortSignal.timeout(12000)
+    });
+    if (!res.ok) { console.log('[OPENAI] Match analysis HTTP ' + res.status); return null; }
+    var data = await res.json();
+    var text = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+    if (text) { openaiAnalysisCache[cacheKey] = text.trim(); return text.trim(); }
+    return null;
+  } catch (e) { console.log('[OPENAI] Match analysis error:', e.message); return null; }
+}
+
+async function openaiBatchAnalysis(matches) {
+  if (!OPENAI_API_KEY || !matches || matches.length === 0) return {};
+  var systemMsg = 'You are an expert sports betting analyst. For each match, provide a sharp 1-sentence key insight focused on the most important factor. Return ONLY valid JSON.';
+  var matchList = '';
+  for (var i = 0; i < Math.min(matches.length, 10); i++) {
+    var m = matches[i];
+    matchList += (i + 1) + '. ' + m.home + ' vs ' + m.away + ' (' + m.sport + ', ' + m.league + ')' +
+      ' | ELO: ' + Math.round(m.eloHome) + ' vs ' + Math.round(m.eloAway) +
+      ' | Form: ' + m.formHome + ' vs ' + m.formAway + '\n';
+  }
+  var userMsg = 'Analyze these matches and return a JSON object mapping each "home vs away" key to a 1-sentence insight:\n\n' + matchList;
+  try {
+    var body = JSON.stringify({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'system', content: systemMsg }, { role: 'user', content: userMsg }],
+      temperature: 0.3, max_tokens: 800,
+      response_format: { type: 'json_object' }
+    });
+    var res = await fetch(OPENAI_API_BASE + '/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + OPENAI_API_KEY },
+      body: body, signal: AbortSignal.timeout(15000)
+    });
+    if (!res.ok) { console.log('[OPENAI] Batch analysis HTTP ' + res.status); return {}; }
+    var data = await res.json();
+    var text = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+    if (text) return JSON.parse(text);
+    return {};
+  } catch (e) { console.log('[OPENAI] Batch analysis error:', e.message); return {}; }
+}
+
+// Rewrite raw stat-based reasons into natural human-readable text (batch — one API call for all tips)
+async function openaiRewriteReasonsBatch(tips) {
+  if (!OPENAI_API_KEY || !tips || tips.length === 0) return;
+  try {
+    var tipList = '';
+    for (var i = 0; i < tips.length; i++) {
+      var t = tips[i];
+      tipList += (i + 1) + '. [' + t.sport + '] ' + t.match + ' | Pick: ' + t.pick + ' @ ' + t.odds + ' (' + t.conf + '%) | ' + t.market + '\n   Raw: ' + t.reason + '\n';
+    }
+    var systemMsg = 'You are a sharp sports betting tipster who writes tips for a Telegram channel. For each tip below, rewrite the raw statistical reason into a concise, natural 1-sentence explanation that a regular punter would understand. Be confident and direct. Do not repeat the pick or odds. Do not use phrases like "our AI models", "our stats model", "AI models agree", or "ELO". Just explain WHY this is a good bet in plain English. No emojis.';
+    var userMsg = 'Rewrite each reason into natural 1-sentence tip explanations. Return ONLY a JSON object mapping the tip number (as string) to the rewritten reason.\n\n' + tipList;
+    var body = JSON.stringify({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'system', content: systemMsg }, { role: 'user', content: userMsg }],
+      temperature: 0.5, max_tokens: 1500,
+      response_format: { type: 'json_object' }
+    });
+    var res = await fetch(OPENAI_API_BASE + '/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + OPENAI_API_KEY },
+      body: body, signal: AbortSignal.timeout(20000)
+    });
+    if (!res.ok) { console.log('[OPENAI] Reason rewrite HTTP ' + res.status); return; }
+    var data = await res.json();
+    var text = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+    if (!text) { console.log('[OPENAI] Reason rewrite: empty response'); return; }
+    var parsed = JSON.parse(text);
+    var rewriteCount = 0;
+    for (var i = 0; i < tips.length; i++) {
+      var rewritten = parsed[String(i + 1)];
+      if (rewritten && typeof rewritten === 'string' && rewritten.length > 10) {
+        tips[i].reason = rewritten.trim().replace(/^["']|["']$/g, '');
+        rewriteCount++;
+      }
+    }
+    console.log('[OPENAI] Rewrote ' + rewriteCount + '/' + tips.length + ' tip reasons to natural language');
+  } catch (e) { console.log('[OPENAI] Reason rewrite error:', e.message); }
+}
+
+// Single tip rewrite fallback (for display-time)
+async function openaiRewriteSingleReason(rawReason, home, away, pick, market, sport, odds, conf) {
+  if (!OPENAI_API_KEY || !rawReason || rawReason.length < 15) return rawReason;
+  if (rawReason.indexOf('AI models') === -1 && rawReason.indexOf('ELO') === -1 && rawReason.indexOf('Stats model') === -1) return rawReason;
+  try {
+    var systemMsg = 'You are a sharp sports betting tipster. Rewrite this raw reason into 1 natural sentence a punter would understand. No mention of AI, ELO, or stats models. Just explain why this is a good bet. No emojis.';
+    var userMsg = sport + ': ' + home + ' vs ' + away + ' | Pick: ' + pick + ' @ ' + odds + ' (' + conf + '%)\nRaw: ' + rawReason;
+    var body = JSON.stringify({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'system', content: systemMsg }, { role: 'user', content: userMsg }],
+      temperature: 0.5, max_tokens: 80
+    });
+    var res = await fetch(OPENAI_API_BASE + '/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + OPENAI_API_KEY },
+      body: body, signal: AbortSignal.timeout(6000)
+    });
+    if (!res.ok) return rawReason;
+    var data = await res.json();
+    var text = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+    if (text) return text.trim().replace(/^["']|["']$/g, '');
+    return rawReason;
+  } catch (e) { return rawReason; }
+}
+
+// Gemini fallback (kept for compatibility)
 async function geminiMatchAnalysis(home, away, league, sport, eloHome, eloAway, formHome, formAway, oddsHome, oddsAway) {
   if (!GEMINI_API_KEY) return null;
   var cacheKey = home + '|' + away + '|' + league;
@@ -2987,8 +2629,11 @@ async function geminiMatchAnalysis(home, away, league, sport, eloHome, eloAway, 
     return null;
   } catch (e) { return null; }
 }
+// Batch analysis: OpenAI first, Gemini fallback
 async function geminiBatchAnalysis(matches) {
-  if (!GEMINI_API_KEY || !matches || matches.length === 0) return {};
+  if (!matches || matches.length === 0) return {};
+  if (OPENAI_API_KEY) return await openaiBatchAnalysis(matches);
+  if (!GEMINI_API_KEY) return {};
   var prompt = 'You are a sports betting analyst. For each match below, provide a 1-sentence key insight. Return JSON object mapping match key to insight.\n\n';
   for (var i = 0; i < Math.min(matches.length, 10); i++) {
     var m = matches[i];
@@ -3514,7 +3159,7 @@ async function handleTelegramUpdate(update) {
           '• /tips — Today\'s free tips\n' +
           '• /bankers — Highest confidence picks\n' +
           '• /help — All commands\n\n' +
-          '📊 We use AI-powered analysis across soccer, tennis, cricket, horse racing & more.\n\n' +
+          '📊 We use AI-powered analysis across soccer, tennis, cricket & more.\n\n' +
           telegramAdFooter()
         );
       }
@@ -3641,7 +3286,7 @@ async function handleTelegramUpdate(update) {
       '/bankers — Highest confidence picks (80%+)\n' +
       '/all — Full list of upcoming tips\n' +
       '/sport soccer — Tips for a specific sport\n' +
-      '   Sports: soccer, tennis, nfl, nrl, mlb, afl, cricket, mma/ufc, darts, horse racing\n' +
+      '   Sports: soccer, tennis, nfl, nrl, mlb, afl, cricket, mma/ufc\n' +
       '/stats — Overall win rate\n' +
       '/results — Recent results\n\n' +
       'Natural language: just type "tips", "bankers", "today", or a sport name.\n\n' +
@@ -3653,7 +3298,6 @@ async function handleTelegramUpdate(update) {
   // /tips
   if (textLower === '/tips' || textLower === '/tips@mjk_bettingtips_bot' || textLower === 'tips' || textLower === "today's tips" || textLower === 'today') {
     var tips = upcomingTips(cachedTips, isGroup ? TIERS.free.tipLimit : 10);
-    if (isGroup) tips = tips.filter(function(t) { return t.type !== 'horse_racing'; });
     if (tips.length === 0) { await sendTelegram(chatId, 'No upcoming tips right now. Check back later!'); return; }
     var reply = '<b>MJK Tips — ' + (isGroup ? 'Free ' + tips.length : 'Top ' + tips.length) + '</b>\n\n';
     tips.forEach(function(t, i) { reply += formatTip(t, i + 1) + '\n\n'; });
@@ -3664,7 +3308,7 @@ async function handleTelegramUpdate(update) {
 
   // /bankers
   if (textLower === '/bankers' || textLower === '/bankers@mjk_bettingtips_bot' || textLower === 'bankers') {
-    var bankers = upcomingTips(cachedTips.filter(function(t) { return t.conf >= 80 && (isGroup ? t.type !== 'horse_racing' : true); }), isGroup ? 3 : 10);
+    var bankers = upcomingTips(cachedTips.filter(function(t) { return t.conf >= 80; }), isGroup ? 3 : 10);
     if (bankers.length === 0) { await sendTelegram(chatId, 'No bankers (80%+) available right now.'); return; }
     var reply = '<b>MJK Bankers — Highest Confidence</b>\n\n';
     bankers.forEach(function(t, i) { reply += formatTip(t, i + 1) + '\n\n'; });
@@ -3676,7 +3320,6 @@ async function handleTelegramUpdate(update) {
   // /all
   if (textLower === '/all' || textLower === '/all@mjk_bettingtips_bot' || textLower === 'all tips') {
     var tips = upcomingTips(cachedTips, isGroup ? TIERS.free.tipLimit : 50);
-    if (isGroup) tips = tips.filter(function(t) { return t.type !== 'horse_racing'; });
     if (tips.length === 0) { await sendTelegram(chatId, 'No upcoming tips right now.'); return; }
     var bySport = {};
     tips.forEach(function(t) { if (!bySport[t.sport]) bySport[t.sport] = []; bySport[t.sport].push(t); });
@@ -3695,7 +3338,7 @@ async function handleTelegramUpdate(update) {
   if (textLower.startsWith('/sport') || textLower.startsWith('/sport@mjk_bettingtips_bot')) {
     var parts = msg.text.trim().split(/\s+/);
     var query = (parts[1] || '').toLowerCase().replace(/@mjk_bettingtips_bot/gi, '');
-    if (!query) { await sendTelegram(chatId, 'Usage: /sport <name>\nExample: /sport soccer\n\nSports: soccer, tennis, nfl, nrl, mlb, afl, cricket, mma, darts, horse racing'); return; }
+    if (!query) {       await sendTelegram(chatId, 'Usage: /sport <name>\nExample: /sport soccer\n\nSports: soccer, tennis, nfl, nrl, mlb, afl, cricket, mma'); return; }
     var sportMap = {
       'soccer': 'soccer', 'football': 'soccer', 'epl': 'soccer_epl', 'fifa': 'soccer_fifa',
       'tennis': 'tennis', 'wimbledon': 'tennis',
@@ -3704,9 +3347,7 @@ async function handleTelegramUpdate(update) {
       'mlb': 'baseball', 'baseball': 'baseball',
       'afl': 'aussierules', 'aussie rules': 'aussierules', 'australian football': 'aussierules',
       'cricket': 'cricket', 't20': 'cricket',
-      'mma': 'mma', 'ufc': 'mma', 'boxing': 'mma', 'fight': 'mma',
-      'darts': 'darts', 'pdc': 'darts', 'premier league darts': 'darts',
-      'horse': 'horse_racing', 'horse racing': 'horse_racing', 'racing': 'horse_racing'
+      'mma': 'mma', 'ufc': 'mma', 'boxing': 'mma', 'fight': 'mma'
     };
     var matchKey = sportMap[query] || query;
     var tips = upcomingTips(cachedTips.filter(function(t) { return t.type.toLowerCase().indexOf(matchKey) >= 0 || t.sport.toLowerCase().indexOf(query) >= 0; }), 15);
@@ -3755,6 +3396,8 @@ async function handleTelegramUpdate(update) {
   }
 }
 
+var tgPollFailCount = 0;
+var TG_POLL_MAX_DELAY = 60000;
 async function tgPollOnce() {
   if (!TELEGRAM_BOT_TOKEN || tgPolling) return;
   tgPolling = true;
@@ -3769,11 +3412,21 @@ async function tgPollOnce() {
           await handleTelegramUpdate(update);
         }
       }
+      tgPollFailCount = 0;
+    } else {
+      tgPollFailCount++;
+      if (tgPollFailCount <= 3) console.log('[TELEGRAM] Poll HTTP ' + res.status + ' (attempt ' + tgPollFailCount + ')');
     }
   } catch (e) {
-    console.log('[TELEGRAM] Poll error:', e.message || e);
+    tgPollFailCount++;
+    if (tgPollFailCount <= 3) console.log('[TELEGRAM] Poll error:', e.message || e);
+    else if (tgPollFailCount === 4) console.log('[TELEGRAM] Repeated poll errors — backing off (will retry silently)');
   }
   tgPolling = false;
+}
+function tgPollDelay() {
+  if (tgPollFailCount === 0) return 1000;
+  return Math.min(TG_POLL_MAX_DELAY, 1000 * Math.pow(2, tgPollFailCount));
 }
 
 // === AUTO-PROMO: DISABLED ===
@@ -3788,7 +3441,7 @@ function startTelegramBot() {
   console.log('[TELEGRAM] Smart features: link blocking, welcome, translation, promo');
   async function pollLoop() {
     await tgPollOnce();
-    setTimeout(pollLoop, 1000);
+    setTimeout(pollLoop, tgPollDelay());
   }
   pollLoop();
   startPromoScheduler();
@@ -3842,8 +3495,6 @@ app.get('/api/tips', rateLimit(30000, 60), function(req, res) {
   if (header && header.startsWith('Bearer ')) {
     try { var decoded = jwt.verify(header.split(' ')[1], JWT_SECRET); isAdmin = decoded.role === 'admin'; username = decoded.username; } catch (e) {}
   }
-  // Hide horse racing tips for tiers without access
-  if (!tier.horseRacing) tips = tips.filter(function(t) { return t.type !== 'horse_racing'; });
   // Apply sport filtering for Elite tier
   if (tier.sportFiltering && username) {
     var prefs = loadSportPrefs();
@@ -3949,15 +3600,17 @@ async function fetchLiveScores() {
     if (t.result !== 'pending' || !t.kickoff) return false;
     var ko = new Date(t.kickoff).getTime();
     var elapsed = now - ko;
-    return elapsed > 0 && elapsed < 4 * 60 * 60 * 1000 && !t.type.startsWith('soccer_') && !t.type.startsWith('tennis_') && t.type !== 'horse_racing';
+    return elapsed > 0 && elapsed < 4 * 60 * 60 * 1000 && !t.type.startsWith('soccer_') && !t.type.startsWith('tennis_');
   });
 
-  if (activeOther.length > 0 && ODDS_API_KEY) {
+  if (activeOther.length > 0 && getOddsApiKey()) {
     try {
       var typeSet = {};
       activeOther.forEach(function(t) { typeSet[t.type] = true; });
       for (var sportKey in typeSet) {
-        var res2 = await fetch(ODDS_API_BASE + '/sports/' + sportKey + '/scores?apiKey=' + ODDS_API_KEY + '&daysFrom=1');
+        var liveKey = getOddsApiKey();
+        var res2 = await fetch(ODDS_API_BASE + '/sports/' + sportKey + '/scores?apiKey=' + liveKey + '&daysFrom=1');
+        if (res2.status === 401) markOddsKeyExhausted(liveKey);
         if (res2.ok) {
           var scores = await res2.json();
           if (scores) {
@@ -4489,7 +4142,7 @@ function telegramAdFooter() {
     '🎯 <b>Get MORE winning tips!</b>\n\n' +
     '📱 <b>MJK Betting Tips App</b>\n' +
     '⭐ Starter: R150/week — 10 tips/day\n' +
-    '💎 Pro: R400/week — 25 tips + horse racing + acca builder\n' +
+    '💎 Pro: R400/week — 25 tips + acca builder\n' +
     '👑 Elite: R800/month — 30 tips + everything\n\n' +
     '🌐 Website: <a href="https://mjkbettingtips.onrender.com">mjkbettingtips.onrender.com</a>\n' +
     '📣 Telegram: <a href="https://t.me/MJKBettingTips">t.me/MJKBettingTips</a>\n' +
@@ -4538,7 +4191,7 @@ function formatTipsForWhatsApp(tips) {
   msg += '🎯 Get MORE winning tips!\n\n';
   msg += '📱 MJK Betting Tips App\n';
   msg += '⭐ Starter: R150/week — 10 tips/day\n';
-  msg += '💎 Pro: R400/week — 25 tips + horse racing + acca builder\n';
+  msg += '💎 Pro: R400/week — 25 tips + acca builder\n';
   msg += '👑 Elite: R800/month — 30 tips + everything\n\n';
   msg += '🌐 mjkbettingtips.onrender.com\n';
   msg += '📣 t.me/MJKBettingTips\n';
@@ -4577,10 +4230,10 @@ async function sendDailyBroadcast() {
   }
   if (TELEGRAM_GROUP_ID && TELEGRAM_BOT_TOKEN) {
     // Only send unanimous tips (all 3 AIs agreed) to the group
-    var unanimousTips = upcoming.filter(function(t) { return t.type !== 'horse_racing' && t.tripleAgree === true; });
+    var unanimousTips = upcoming.filter(function(t) { return t.tripleAgree === true; });
     // Fallback: if no unanimous tips, send top confidence tips
     if (unanimousTips.length === 0) {
-      unanimousTips = upcoming.filter(function(t) { return t.type !== 'horse_racing' && t.conf >= 75; }).slice(0, TIERS.free.tipLimit);
+      unanimousTips = upcoming.filter(function(t) { return t.conf >= 75; }).slice(0, TIERS.free.tipLimit);
     }
     var freeTips = unanimousTips.slice(0, TIERS.free.tipLimit);
     if (freeTips.length > 0) {
@@ -4735,7 +4388,7 @@ app.post('/api/push/unsubscribe', function(req, res) {
 // === LIVE ODDS COMPARISON ===
 app.get('/api/odds/compare/:sport', async function(req, res) {
   var sport = req.params.sport;
-  if (!ODDS_API_KEY) return res.json({ odds: [], message: 'Odds API not configured' });
+  if (!getOddsApiKey()) return res.json({ odds: [], message: 'Odds API not configured' });
   try {
     var data = await fetchLiveOdds(sport);
     res.json({ odds: data || [], sport: sport });
@@ -4774,7 +4427,7 @@ app.use(function(err, req, res, next) {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-loadTrackedTips(); loadElo(); loadForm(); loadWeights(); loadCalibration(); loadTeamStats(); loadH2H(); loadMatchDates(); loadModelCoeffs(); loadFeatureLogs(); loadSportHealth(); loadCachedOdds(); loadRacingEvents();
+loadTrackedTips(); loadElo(); loadForm(); loadWeights(); loadCalibration(); loadTeamStats(); loadH2H(); loadMatchDates(); loadModelCoeffs(); loadFeatureLogs(); loadSportHealth(); loadCachedOdds();
 restoreDataFromGitHub();
 refreshTips();
 
@@ -4803,6 +4456,16 @@ setInterval(checkResults, 300000);
 setInterval(backupDataToGitHub, 3600000); // Backup to GitHub every hour
 setInterval(function() { cleanResearchCache(); cleanRevokedTokens(); }, 3600000);
 setInterval(function() { loadTrackedTips(); loadFeatureLogs(); for (var si = 0; si < SPORTS.length; si++) trainSportModel(SPORTS[si].key); checkSportHealth(); }, 1800000);
+
+// === KEEP-ALIVE: Self-ping every 10 min to prevent Render free tier sleep ===
+if (SITE_URL) {
+  setInterval(function() {
+    safeFetch(SITE_URL + '/health', {}, 15000).then(function(r) {
+      if (r && r.ok) console.log('[KEEPALIVE] Ping OK');
+      else console.log('[KEEPALIVE] Ping failed: HTTP ' + (r ? r.status : 'none'));
+    }).catch(function(e) { console.log('[KEEPALIVE] Ping error: ' + (e.message || e).slice(0, 80)); });
+  }, 600000);
+}
 
 app.get('/health', function(req, res) { res.json({ status: 'ok', uptime: process.uptime() }); });
 

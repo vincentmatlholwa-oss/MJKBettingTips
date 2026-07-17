@@ -33,6 +33,8 @@ services:
         sync: false
       - key: GITHUB_BACKUP_TOKEN
         sync: false
+      - key: OPENAI_API_KEY
+        sync: false
     disk:
       name: mjkbetting-data
       mountPath: /var/data
