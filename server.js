@@ -1315,10 +1315,10 @@ function buildTipReason(ctx) {
     else if (eloAbs > 80) lines.push(eloFav + ' has a slight edge on form');
     else lines.push('Teams are closely matched');
   } else {
-    // Soccer default
-    if (eloAbs > 150) lines.push(eloFav + ' rated significantly stronger (ELO gap ' + eloAbs + ')');
-    else if (eloAbs > 80) lines.push(eloFav + ' slight ELO advantage (+' + eloAbs + ')');
-    else lines.push('Teams closely matched on ELO');
+    // Soccer default — always reference team names for unique text
+    if (eloAbs > 150) lines.push(home + ' rated significantly stronger than ' + away + ' (ELO gap ' + eloAbs + ')');
+    else if (eloAbs > 80) lines.push(home + ' holds a slight edge over ' + away);
+    else lines.push(home + ' and ' + away + ' are closely matched');
   }
 
   // Poisson / expected scoring
@@ -1331,7 +1331,7 @@ function buildTipReason(ctx) {
         var xgFav = xgDiff > 0 ? home : away;
         lines.push('Stats model expects ' + xgFav + ' to find the net more (' + expH.toFixed(1) + ' vs ' + expA.toFixed(1) + ' xG)');
       } else {
-        lines.push('Expected goals tight (' + expH.toFixed(1) + ' vs ' + expA.toFixed(1) + ')');
+        lines.push(home + ' xG ' + expH.toFixed(1) + ' vs ' + away + ' xG ' + expA.toFixed(1) + ' — tight margins');
       }
     }
   }
@@ -1420,7 +1420,10 @@ function buildTipReason(ctx) {
       else if (ctx.ensembleResult.agree) lines.push('2 out of 3 AI models back this pick');
       else lines.push('Mixed AI signals — approach with caution');
     } else {
-      if (ctx.ensembleResult.unanimous) lines.push('All 3 AI models unanimously agree');
+      if (ctx.ensembleResult.unanimous) {
+        var pickTeam = pick.replace(' to Win', '').trim();
+        lines.push(pickTeam + ' backed by all 3 AI models');
+      }
       else if (ctx.ensembleResult.agree) lines.push('Majority of our AI models agree on this pick');
     }
   }
@@ -1428,7 +1431,7 @@ function buildTipReason(ctx) {
   // Value bet
   if (ctx.valueEdge && ctx.valueEdge > 0.08) {
     if (isMMA) lines.push('Value spotted — our AI rates this fighter ' + Math.round(ctx.valueEdge * 100) + '% higher than the odds imply');
-    else lines.push('Value detected — AI probability ' + Math.round(ctx.valueEdge * 100) + '% higher than the odds suggest');
+    else lines.push('Value edge of ' + Math.round(ctx.valueEdge * 100) + '% above market odds');
   }
 
   // Fallback
@@ -1439,7 +1442,7 @@ function buildTipReason(ctx) {
     else if (isNFL || isNRL || isAFL) lines.push('Based on team form, strength ratings, and model analysis');
     else if (isCricket) lines.push('Based on team form, player stats, and model analysis');
     else if (isMLB) lines.push('Based on team form, pitching stats, and model analysis');
-    else lines.push('Based on team form, stats, and AI model analysis');
+    else lines.push(home + ' vs ' + away + ' — model analysis favours ' + pick.replace(' to Win', '').trim());
   }
   return lines.join('. ') + '.';
 }
@@ -1589,7 +1592,7 @@ async function buildSoccerTip(oddsMatch, sport) {
   else if (ensembleResult.disagree) finalConf = Math.max(cfg.minConf, finalConf - 8);
   else finalConf = Math.max(cfg.minConf, finalConf - 3);
   var valueEdge = best.prob - (1 / parseFloat(best.odds));
-  var reason = buildTipReason({ sportKey: sport.key, marketType: best.marketType, market: best.market, pick: best.pick, home: home, away: away, poisson: poisson, eloH: adjustedElo, eloA: adjustedEloA, hForm: hForm, aForm: aForm, bsdPred: bsdPred, afPred: afPred, ensembleResult: ensembleResult, bttsProb: btts.yes, expectedTotal: poisson.expectedHomeGoals + poisson.expectedAwayGoals, valueEdge: valueEdge, h2hTotal: h2hData ? h2hData.total : 0, h2hHomeWins: h2hData ? h2hData.homeWinRate : 0.5 });
+  var reason = buildTipReason({ sportKey: sport.key, marketType: best.marketType, market: best.market, pick: best.pick, home: home, away: away, poisson: poisson, eloH: adjustedElo, eloA: adjustedEloA, hForm: hForm, aForm: aForm, bsdPred: bsdPred, afPred: afPred, ensembleResult: ensembleResult, bttsProb: btts.yes, expectedTotal: poisson.expectedHomeGoals + poisson.expectedAwayGoals, valueEdge: valueEdge, h2hTotal: h2hData ? h2hData.total : 0, h2hHomeWins: h2hData ? h2hData.homeWinRate : 0.5, odds: best.odds, league: sport.name });
   return { type: sport.key, sport: sport.name, icon: sport.icon, match: home + ' vs ' + away, league: sport.name, country: COUNTRY_MAP[sport.key] || '', marketType: best.marketType, market: best.market, marketLine: best.line, kickoff: oddsMatch.commence_time, pick: best.pick, odds: best.odds, conf: finalConf, realOdds: consensus ? { home: consensus.bestHomePrice || null, away: consensus.bestAwayPrice || null, draw: consensus.bestDrawPrice || null } : null, bookmaker: best.bookmaker, valueBet: best.valueBet, reason: reason, features: features, bsdAgree: bsdPred ? ensembleResult.agree : null, tripleAgree: ensembleResult.unanimous };
 }
 
