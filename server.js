@@ -63,6 +63,7 @@ const FB_API_KEY = process.env.FOOTBALL_DATA_API_KEY || '';
 const FB_API_BASE = 'https://api.football-data.org/v4';
 const ODDS_API_KEY = process.env.ODDS_API_KEY || '';
 const ODDS_API_KEY_2 = process.env.ODDS_API_KEY_2 || '';
+const SITE_URL = process.env.SITE_URL || 'https://mjkbettingtips.onrender.com';
 const ODDS_API_BASE = 'https://api.the-odds-api.com/v4';
 
 // === ODDS API KEY ROTATION ===
